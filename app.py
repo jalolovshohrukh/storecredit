@@ -8,8 +8,24 @@ import os
 app = Flask(__name__)
 
 # ── MongoDB setup ─────────────────────────────────────────────────────────────
-_client = MongoClient(os.environ['MONGODB_URI'])
-db = _client.get_default_database()
+_MONGO_URI = os.environ.get('MONGODB_URI', '')
+if _MONGO_URI:
+    _client = MongoClient(_MONGO_URI)
+    db = _client.get_default_database()
+else:
+    _client = None
+    db = None
+
+@app.before_request
+def check_db():
+    if db is None:
+        return (
+            '<div style="font-family:sans-serif;padding:2rem;max-width:480px;margin:auto">'
+            '<h2>MongoDB not configured</h2>'
+            '<p style="color:#666;margin-top:1rem">Set the <code>MONGODB_URI</code> '
+            'environment variable in your Vercel project settings, then redeploy.</p>'
+            '</div>'
+        ), 503
 
 COLORS = ['#6C63FF', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#F7B731', '#A29BFE', '#FD79A8']
 
