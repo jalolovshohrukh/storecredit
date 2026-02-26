@@ -1,15 +1,15 @@
 from flask import Flask, request, render_template_string, redirect, url_for
 from markupsafe import Markup
 from datetime import datetime
+from pymongo import MongoClient
 import uuid
 import os
 
 app = Flask(__name__)
 
-# ── In-memory data stores ─────────────────────────────────────────────────────
-accounts = []
-loans = []
-transactions = []
+# ── MongoDB setup ─────────────────────────────────────────────────────────────
+_client = MongoClient(os.environ['MONGODB_URI'])
+db = _client.get_default_database()
 
 COLORS = ['#6C63FF', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#F7B731', '#A29BFE', '#FD79A8']
 
@@ -17,36 +17,46 @@ COLORS = ['#6C63FF', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#F7B731', '#A2
 def gen_id():
     return str(uuid.uuid4())[:8]
 
+def norm(doc):
+    """Rename MongoDB _id → id so templates don't change."""
+    if doc and '_id' in doc:
+        doc['id'] = str(doc.pop('_id'))
+    return doc
+
+def norm_all(cursor):
+    return [norm(d) for d in cursor]
+
 def get_account(aid):
-    return next((a for a in accounts if a['id'] == aid), None)
+    return norm(db.accounts.find_one({'_id': aid}))
 
 def get_loan(lid):
-    return next((l for l in loans if l['id'] == lid), None)
+    return norm(db.loans.find_one({'_id': lid}))
 
 def net_worth():
-    return sum(a['balance'] for a in accounts)
+    result = list(db.accounts.aggregate([
+        {'$group': {'_id': None, 'total': {'$sum': '$balance'}}}
+    ]))
+    return result[0]['total'] if result else 0.0
 
 def add_txn(date, amount, txn_type, account_id, desc, loan_id=None):
-    transactions.append({
-        'id': gen_id(),
-        'date': date,
-        'amount': amount,
-        'type': txn_type,   # loan_out | payment_in
-        'account_id': account_id,
-        'description': desc,
-        'loan_id': loan_id,
+    db.transactions.insert_one({
+        '_id': gen_id(),
+        'date': date, 'amount': amount, 'type': txn_type,
+        'account_id': account_id, 'description': desc, 'loan_id': loan_id,
     })
 
 def filter_txns(period):
     now = datetime.now()
-    def ok(t):
-        d = t['date']
-        if period == 'today':     return d == now.strftime('%Y-%m-%d')
-        if period == 'month':     return d.startswith(now.strftime('%Y-%m'))
-        if period == 'year':      return d.startswith(str(now.year))
-        if period == 'last_year': return d.startswith(str(now.year - 1))
-        return True
-    return sorted(filter(ok, transactions), key=lambda x: x['date'], reverse=True)
+    query = {}
+    if period == 'today':
+        query['date'] = now.strftime('%Y-%m-%d')
+    elif period == 'month':
+        query['date'] = {'$regex': f'^{now.strftime("%Y-%m")}'}
+    elif period == 'year':
+        query['date'] = {'$regex': f'^{str(now.year)}'}
+    elif period == 'last_year':
+        query['date'] = {'$regex': f'^{str(now.year - 1)}'}
+    return norm_all(db.transactions.find(query).sort('date', -1))
 
 def _nav(active):
     pages = [
@@ -217,11 +227,10 @@ _FOOT = '</body></html>'
 
 @app.route('/')
 def home():
-    active_loans = [l for l in loans if l['status'] == 'active']
     return render_template_string(
         HOME_TMPL,
-        accounts=accounts,
-        active_loans=active_loans,
+        accounts=norm_all(db.accounts.find()),
+        active_loans=norm_all(db.loans.find({'status': 'active'})),
         nw=net_worth(),
         month=datetime.now().strftime('%B %Y'),
         nav=Markup(_nav('home')),
@@ -238,10 +247,11 @@ def add_account():
         else:
             try:
                 balance = float(bal) if bal else 0.0
-                accounts.append({
-                    'id': gen_id(), 'name': name,
+                count = db.accounts.count_documents({})
+                db.accounts.insert_one({
+                    '_id': gen_id(), 'name': name,
                     'balance': round(balance, 2),
-                    'color': COLORS[len(accounts) % len(COLORS)],
+                    'color': COLORS[count % len(COLORS)],
                 })
                 return redirect(url_for('home'))
             except ValueError:
@@ -253,10 +263,7 @@ def account_detail(aid):
     acct = get_account(aid)
     if not acct:
         return redirect(url_for('home'))
-    acct_txns = sorted(
-        [t for t in transactions if t['account_id'] == aid],
-        key=lambda x: x['date'], reverse=True
-    )
+    acct_txns = norm_all(db.transactions.find({'account_id': aid}).sort('date', -1))
     return render_template_string(
         ACCOUNT_DETAIL_TMPL, acct=acct, txns=acct_txns,
         nav=Markup(_nav('home')),
@@ -264,13 +271,14 @@ def account_detail(aid):
 
 @app.route('/loans')
 def loan_list():
-    active = [l for l in loans if l['status'] == 'active']
-    paid   = [l for l in loans if l['status'] == 'paid']
+    active = norm_all(db.loans.find({'status': 'active'}))
+    paid   = norm_all(db.loans.find({'status': 'paid'}))
     return render_template_string(LOANS_TMPL, active=active, paid=paid, nav=Markup(_nav('loans')))
 
 @app.route('/loans/add', methods=['GET', 'POST'])
 def add_loan():
     error = None
+    all_accounts = norm_all(db.accounts.find())
     if request.method == 'POST':
         borrower = request.form.get('borrower', '').strip()
         phone    = request.form.get('phone', '').strip()
@@ -294,9 +302,9 @@ def add_loan():
                     error = 'Invalid source account'
                 else:
                     lid = gen_id()
-                    acct['balance'] = round(acct['balance'] - amount, 2)
-                    loans.append({
-                        'id': lid, 'borrower': borrower, 'phone': phone,
+                    db.accounts.update_one({'_id': from_acc}, {'$inc': {'balance': -amount}})
+                    db.loans.insert_one({
+                        '_id': lid, 'borrower': borrower, 'phone': phone,
                         'total': amount, 'remaining': amount,
                         'from_account': from_acc, 'to_account': to_acc,
                         'date': date, 'note': note, 'status': 'active',
@@ -308,7 +316,7 @@ def add_loan():
                 if not error:
                     error = 'Invalid amount'
     return render_template_string(
-        ADD_LOAN_TMPL, accounts=accounts, error=error,
+        ADD_LOAN_TMPL, accounts=all_accounts, error=error,
         today=datetime.now().strftime('%Y-%m-%d'),
         nav=Markup(_nav('loans')),
     )
@@ -325,7 +333,7 @@ def loan_detail(lid):
         from_acct=get_account(loan['from_account']),
         to_acct=get_account(loan['to_account']),
         pct=pct,
-        accounts=accounts,
+        accounts=norm_all(db.accounts.find()),
         today=datetime.now().strftime('%Y-%m-%d'),
         get_account=get_account,
         nav=Markup(_nav('loans')),
@@ -344,16 +352,14 @@ def add_payment(lid):
         amount = min(float(amt_str), loan['remaining'])
         if amount <= 0:
             raise ValueError()
-        acct = get_account(to_acc)
-        if acct:
-            acct['balance'] = round(acct['balance'] + amount, 2)
-        loan['remaining'] = round(loan['remaining'] - amount, 2)
-        loan['payments'].append({
-            'id': gen_id(), 'date': date,
-            'amount': amount, 'account_id': to_acc, 'note': note,
-        })
-        if loan['remaining'] <= 0:
-            loan['status'] = 'paid'
+        new_remaining = round(loan['remaining'] - amount, 2)
+        new_status = 'paid' if new_remaining <= 0 else 'active'
+        payment = {'id': gen_id(), 'date': date, 'amount': amount, 'account_id': to_acc, 'note': note}
+        db.accounts.update_one({'_id': to_acc}, {'$inc': {'balance': amount}})
+        db.loans.update_one(
+            {'_id': lid},
+            {'$set': {'remaining': new_remaining, 'status': new_status}, '$push': {'payments': payment}}
+        )
         add_txn(date, amount, 'payment_in', to_acc, f'Payment from {loan["borrower"]}', lid)
     except (ValueError, TypeError):
         pass
