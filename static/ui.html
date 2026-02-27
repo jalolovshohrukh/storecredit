@@ -8,21 +8,21 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --brand:         #00C896;
-      --brand-dark:    #00A87C;
-      --dark-card:     #1C2033;
-      --text-primary:  #1C2033;
-      --text-sec:      #9CA3AF;
-      --text-expense:  #F97316;
-      --bg-app:        #F0F4F8;
-      --bg-card:       #FFFFFF;
-      --surface:       #F8FAFB;
-      --border:        #E5E7EB;
+      --brand:        #00C896;
+      --brand-dark:   #00A87C;
+      --dark-card:    #1C2033;
+      --text-primary: #1C2033;
+      --text-sec:     #9CA3AF;
+      --text-expense: #F97316;
+      --bg-app:       #F0F4F8;
+      --bg-card:      #FFFFFF;
+      --surface:      #F8FAFB;
+      --border:       #E5E7EB;
     }
 
     html, body {
@@ -32,732 +32,1040 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
     }
 
-    /* ── Animations ───────────────────────────────────────── */
+    #root {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      width: 100%;
+    }
+
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0; }
     }
-
-    @keyframes ripple-out {
-      0%   { transform: scale(0);  opacity: 0.55; }
-      100% { transform: scale(5);  opacity: 0;    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0);    }
     }
-
-    @keyframes green-flash {
-      0%   { background-color: #C7FFF0; }
-      100% { background-color: transparent; }
+    @keyframes rippleOut {
+      from { transform: scale(0.3); opacity: 0.5; }
+      to   { transform: scale(3);   opacity: 0;   }
     }
-
-    /* Blinking cursor pseudo-element */
-    .cursor-blink::after {
-      content: '';
-      display: inline-block;
-      width: 3px;
-      height: 0.72em;
-      background: var(--brand);
-      margin-left: 3px;
-      vertical-align: middle;
-      border-radius: 2px;
-      animation: blink 1s ease-in-out infinite;
+    @keyframes greenFlash {
+      0%   { background: #C7FFF0; }
+      100% { background: transparent; }
     }
-
-    /* Scrollbar hide */
-    .no-scroll::-webkit-scrollbar { display: none; }
-    .no-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-
-    /* Transaction row hover */
-    .txn-row:hover { background: #F0FDF9 !important; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
+<div id="root"></div>
 
-  <script type="text/babel" data-presets="react">
-    const { useState, useEffect, useRef } = React;
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
 
-    /* ═══════════════════════════════════════════════════════
-       UTILS
-    ═══════════════════════════════════════════════════════ */
-    const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+/* ─── Design tokens (mirrors CSS vars for inline use) ───────────────────── */
+const T = {
+  brand: '#00C896', brandDark: '#00A87C', dark: '#1C2033',
+  textPrimary: '#1C2033', textSec: '#9CA3AF', textExpense: '#F97316',
+  bgApp: '#F0F4F8', bgCard: '#FFFFFF', surface: '#F8FAFB', border: '#E5E7EB',
+};
 
-    function useCounter(target, duration = 1200) {
-      const [val, setVal] = useState(0);
-      useEffect(() => {
-        let start = null;
-        let raf;
-        const step = ts => {
-          if (!start) start = ts;
-          const p = Math.min((ts - start) / duration, 1);
-          setVal(easeOutExpo(p) * target);
-          if (p < 1) raf = requestAnimationFrame(step);
-        };
-        raf = requestAnimationFrame(step);
-        return () => cancelAnimationFrame(raf);
-      }, [target, duration]);
-      return val;
-    }
+/* ─── Inline SVG icons (lucide-style) ──────────────────────────────────── */
+const Icon = ({ d, size = 22, color = 'currentColor', strokeWidth = 2, fill = 'none', ...rest }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill}
+       stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...rest}>
+    {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p}/>) : <path d={d}/>}
+  </svg>
+);
 
-    /* ═══════════════════════════════════════════════════════
-       ICONS  (stroke-based SVG, matching lucide style)
-    ═══════════════════════════════════════════════════════ */
-    const Svg = ({ size = 24, stroke = 'currentColor', fill = 'none', sw = 1.9, children, style }) => (
-      <svg width={size} height={size} viewBox="0 0 24 24"
-           fill={fill} stroke={stroke} strokeWidth={sw}
-           strokeLinecap="round" strokeLinejoin="round" style={style}>
-        {children}
-      </svg>
-    );
+const WalletIcon  = (p) => <Icon {...p} d={['M21 12V7H5a2 2 0 0 1 0-4h14v4','M3 5v14a2 2 0 0 0 2 2h16v-5','M18 12a2 2 0 0 0 0 4h4v-4Z']}/>;
+const PieIcon     = (p) => <Icon {...p} d={['M21.21 15.89A10 10 0 1 1 8 2.83','M22 12A10 10 0 0 0 12 2v10z']}/>;
+const BellIcon    = (p) => <Icon {...p} d={['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9','M10.3 21a1.94 1.94 0 0 0 3.4 0']}/>;
+const PlusIcon    = (p) => <Icon {...p} strokeWidth={2.5} d={['M12 5v14','M5 12h14']}/>;
+const XIcon       = (p) => <Icon {...p} strokeWidth={2.5} d={['M18 6 6 18','M6 6l12 12']}/>;
+const ChevronIcon = (p) => <Icon {...p} d="M9 18l6-6-6-6"/>;
+const DeleteIcon  = (p) => <Icon {...p} d={['M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z','M18 9l-6 6','M12 9l6 6']}/>;
+const EnterIcon   = (p) => <Icon {...p} strokeWidth={2.5} d={['M9 10 4 15l5 5','M20 4v7a4 4 0 0 1-4 4H4']}/>;
+const MenuIcon    = (p) => <Icon {...p} d={['M4 6h16','M4 12h16','M4 18h16']}/>;
+const CalIcon     = (p) => <Icon {...p} d={['M8 2v4','M16 2v4','M3 10h18','rect x=3 y=4 width=18 height=18 rx=2 ry=2']} />;
+const NotesIcon   = (p) => <Icon {...p} d={['M3 10h11','M3 6h18','M3 14h6','M3 18h6']}/>;
+const RecurIcon   = (p) => <Icon {...p} d={['M17 2l4 4-4 4','M3 11V9a4 4 0 0 1 4-4h14','M7 22l-4-4 4-4','M21 13v2a4 4 0 0 1-4 4H3']}/>;
 
-    const IcWallet = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <rect x="1" y="4" width="22" height="16" rx="2.5"/>
-        <path d="M1 10h22"/>
-        <circle cx="17" cy="15" r="1" fill={c} stroke="none"/>
-      </Svg>
-    );
-    const IcChart = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
-        <path d="M22 12A10 10 0 0 0 12 2v10z"/>
-      </Svg>
-    );
-    const IcBell = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-      </Svg>
-    );
-    const IcPlus = ({ s, c }) => (
-      <Svg size={s} stroke={c} sw={2.2}>
-        <line x1="12" y1="4" x2="12" y2="20"/>
-        <line x1="4"  y1="12" x2="20" y2="12"/>
-      </Svg>
-    );
-    const IcX = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <line x1="18" y1="6"  x2="6"  y2="18"/>
-        <line x1="6"  y1="6"  x2="18" y2="18"/>
-      </Svg>
-    );
-    const IcChevR = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <polyline points="9 18 15 12 9 6"/>
-      </Svg>
-    );
-    const IcBack = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
-        <line x1="18" y1="9"  x2="12" y2="15"/>
-        <line x1="12" y1="9"  x2="18" y2="15"/>
-      </Svg>
-    );
-    const IcEnter = ({ s, c }) => (
-      <Svg size={s} stroke={c} sw={2.1}>
-        <polyline points="9 10 4 15 9 20"/>
-        <path d="M20 4v7a4 4 0 0 1-4 4H4"/>
-      </Svg>
-    );
-    const IcMenu = ({ s, c }) => (
-      <Svg size={s} stroke={c}>
-        <line x1="3" y1="6"  x2="21" y2="6"/>
-        <line x1="3" y1="12" x2="21" y2="12"/>
-        <line x1="3" y1="18" x2="17" y2="18"/>
-      </Svg>
-    );
+/* calendar icon via rect trick — inline rect element */
+function CalendarIcon({ size = 18, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+         stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <line x1="8"  y1="2"  x2="8"  y2="6"/>
+      <line x1="16" y1="2"  x2="16" y2="6"/>
+      <line x1="3"  y1="10" x2="21" y2="10"/>
+    </svg>
+  );
+}
 
-    /* ═══════════════════════════════════════════════════════
-       DATA
-    ═══════════════════════════════════════════════════════ */
-    const TXNS = [
-      { id: 1, icon: '💡', label: 'Electricity', amount: 60.00,  bg: '#FFF8E1', tint: '#FF9800' },
-      { id: 2, icon: '🏠', label: 'Home',         amount: 23.50,  bg: '#E8F5E9', tint: '#43A047' },
-      { id: 3, icon: '🥑', label: 'Food & Drink', amount: 150.00, bg: '#E0F7FA', tint: '#00ACC1' },
-      { id: 4, icon: '🐱', label: 'Pet Food',     amount: 36.50,  bg: '#F3E5F5', tint: '#8E24AA' },
-    ];
+/* ─── easeOutExpo + useCountUp ─────────────────────────────────────────── */
+function easeOutExpo(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
 
-    /* ═══════════════════════════════════════════════════════
-       BALANCE COUNTER
-    ═══════════════════════════════════════════════════════ */
-    function BalanceCounter() {
-      const raw = useCounter(5430.60);
-      const whole = Math.floor(raw);
-      const cents = raw.toFixed(2).split('.')[1] || '00';
-      const fmtWhole = whole.toLocaleString('en-US');
-      return (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
-          <span style={{ fontSize: 36, fontWeight: 700, color: 'white', lineHeight: 1.1, letterSpacing: '-0.5px' }}>
-            ${fmtWhole}.{cents}
-          </span>
-        </div>
-      );
-    }
+function useCountUp(target, ms = 1200) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!target) return;
+    let start = null;
+    const frame = (ts) => {
+      if (!start) start = ts;
+      const p = Math.min((ts - start) / ms, 1);
+      setVal(easeOutExpo(p) * target);
+      if (p < 1) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }, [target, ms]);
+  return val;
+}
 
-    /* ═══════════════════════════════════════════════════════
-       TRANSACTION ROW
-    ═══════════════════════════════════════════════════════ */
-    function TxnRow({ txn, index }) {
-      const [vis, setVis]   = useState(false);
-      const [tap, setTap]   = useState(false);
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+function money(n, decimals = 2) {
+  return parseFloat(n || 0).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
 
-      useEffect(() => {
-        const t = setTimeout(() => setVis(true), 160 + index * 85);
-        return () => clearTimeout(t);
-      }, [index]);
+const ICON_BG = {
+  '💡': '#FEF3C7', '🏠': '#EFF6FF', '🥑': '#F0FDF4', '🐱': '#FDF4FF',
+  '💸': '#FFF7ED', '💰': '#F0FDF4', '🚗': '#EFF6FF', '🛍': '#FDF4FF',
+  '🎬': '#FEF3C7', '💊': '#F0FDF4', '📚': '#EFF6FF', '💼': '#F0FDF4',
+  '💻': '#EFF6FF', '📈': '#FEF3C7', '⇄': '#EFF6FF',
+};
+const CHART_COLORS = ['#00C896','#F97316','#6366F1','#F59E0B','#EC4899','#14B8A6','#8B5CF6','#EF4444'];
 
-      const onTap = () => {
-        setTap(true);
-        setTimeout(() => setTap(false), 380);
-      };
+/* ════════════════════════════════════════════════════════════════════════
+   SCREEN 1 — DASHBOARD
+   ════════════════════════════════════════════════════════════════════════ */
+function Dashboard({ accounts, transactions, activeTab, setActiveTab, loading, onNav }) {
+  const total = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const animated = useCountUp(total);
 
-      const fmtAmt = txn.amount.toFixed(2).replace('.', ',');
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const ym = now.toISOString().slice(0, 7);
 
-      return (
-        <div
-          className="txn-row"
-          onClick={onTap}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            height: 62, padding: '0 4px',
-            borderBottom: '1px solid #F3F4F6',
-            cursor: 'pointer',
-            backgroundColor: tap ? '#DCFFF3' : 'transparent',
-            transition: `opacity .38s ease ${index * 85}ms,
-                         transform .38s ease ${index * 85}ms,
-                         background-color .3s ease`,
-            opacity:   vis ? 1 : 0,
-            transform: vis ? 'translateY(0)' : 'translateY(12px)',
-            borderRadius: 10,
-          }}
-        >
-          <div style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: txn.bg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 20, flexShrink: 0,
-            boxShadow: `0 2px 8px ${txn.tint}28`,
-          }}>{txn.icon}</div>
+  const shown = transactions.filter(t =>
+    activeTab === 'today' ? t.date === todayStr : (t.date || '').startsWith(ym)
+  );
+  const totalExp = shown.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
+  const totalInc = shown.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
 
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#1C2033' }}>
-            {txn.label}
-          </span>
+  const dateStr = now.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
 
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#F97316' }}>
-            {fmtAmt}
-          </span>
-        </div>
-      );
-    }
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none' }}>
 
-    /* ═══════════════════════════════════════════════════════
-       BOTTOM NAV
-    ═══════════════════════════════════════════════════════ */
-    function BottomNav({ active, onAdd }) {
-      const items = [
-        { id: 'wallet', Ic: IcWallet },
-        { id: 'chart',  Ic: IcChart  },
-        { id: 'bell',   Ic: IcBell   },
-        { id: 'plus',   Ic: IcPlus,  action: onAdd },
-      ];
-      return (
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <div style={{
+        background: 'linear-gradient(160deg, #00C896 0%, #00A87C 100%)',
+        borderRadius: '0 0 28px 28px',
+        padding: '52px 24px 28px',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        {/* depth gradient */}
         <div style={{
-          position: 'absolute', bottom: 24, left: 16, right: 16,
-          background: '#1C2033',
-          borderRadius: 28,
-          padding: '12px 8px',
-          display: 'flex',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.18)',
-          zIndex: 20,
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 48,
+          background: 'linear-gradient(to bottom, transparent, rgba(0,100,70,0.18))',
+          pointerEvents: 'none',
+        }}/>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
+          <button style={{
+            background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 12,
+            padding: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <MenuIcon size={20} color="white"/>
+          </button>
+          <div style={{
+            width: 38, height: 38, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #FFB347, #FF6B6B)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 700, color: 'white',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.22)',
+          }}>SH</div>
+        </div>
+
+        <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
+          My budget
+        </div>
+        <div style={{ color: 'white', fontSize: 36, fontWeight: 700, letterSpacing: '-1.5px', lineHeight: 1.1 }}>
+          ${money(animated)}
+        </div>
+
+        <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+          <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13 }}>
+            ↓&nbsp;<strong style={{ color: 'white' }}>${money(totalInc)}</strong> income
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13 }}>
+            ↑&nbsp;<strong style={{ color: 'white' }}>${money(totalExp)}</strong> expenses
+          </span>
+        </div>
+      </div>
+
+      {/* ── Tab toggle ───────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0 0' }}>
+        <div style={{
+          background: 'rgba(0,0,0,0.06)', borderRadius: 50, padding: 4, display: 'flex',
         }}>
-          {items.map(({ id, Ic, action }) => {
-            const on = id === active;
+          {['today', 'month'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} style={{
+              padding: '8px 26px', borderRadius: 50, border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
+              background: activeTab === tab ? T.dark : 'transparent',
+              color: activeTab === tab ? 'white' : T.textSec,
+              transition: 'all 200ms ease',
+            }}>
+              {tab === 'today' ? 'Today' : 'Month'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Date row ─────────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '16px 24px 10px',
+      }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: T.textPrimary }}>{dateStr}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: T.brand }}>${money(totalExp)}</span>
+      </div>
+
+      {/* ── Transaction list ──────────────────────────────────────────────── */}
+      <div style={{ padding: '0 16px 140px' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', color: T.textSec, padding: 56, fontSize: 15 }}>Loading…</div>
+        ) : shown.length === 0 ? (
+          <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>💸</div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>No transactions yet</div>
+          </div>
+        ) : (
+          <div style={{
+            background: T.bgCard, borderRadius: 20,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden',
+          }}>
+            {shown.slice(0, 30).map((t, i) => (
+              <TxnRow key={t.id} txn={t} index={i} last={i === Math.min(shown.length, 30) - 1}/>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Transaction row ───────────────────────────────────────────────────── */
+function TxnRow({ txn, index, last }) {
+  const [visible, setVisible] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setVisible(true), index * 80);
+    return () => clearTimeout(id);
+  }, [index]);
+
+  const isExp  = txn.type === 'expense';
+  const isInc  = txn.type === 'income';
+  const icon   = txn.cat_icon || (isExp ? '💸' : isInc ? '💰' : '⇄');
+  const label  = txn.cat_name || txn.note || txn.type;
+  const iconBg = ICON_BG[icon] || '#F3F4F6';
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={() => { setFlash(true); setTimeout(() => setFlash(false), 500); }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '14px 20px', height: 60,
+        borderBottom: last ? 'none' : `1px solid #F3F4F6`,
+        cursor: 'pointer',
+        background: flash ? '#D1FEF0' : hover ? '#F0FDF9' : 'transparent',
+        transition: 'background 200ms ease, opacity 220ms ease, transform 220ms ease',
+        opacity:    visible ? 1 : 0,
+        transform:  visible ? 'translateY(0)' : 'translateY(12px)',
+        animation:  visible ? 'slideUp 220ms ease forwards' : 'none',
+      }}
+    >
+      <div style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: iconBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 20, flexShrink: 0,
+      }}>
+        {icon}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 15, fontWeight: 600, color: T.textPrimary,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 12, color: T.textSec, marginTop: 1 }}>
+          {txn.acct_name || ''}
+          {txn.note && txn.cat_name ? ` · ${txn.note}` : ''}
+        </div>
+      </div>
+
+      <div style={{
+        fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap',
+        color: isExp ? T.textExpense : isInc ? T.brand : '#6366F1',
+      }}>
+        {isExp ? '−' : isInc ? '+' : '⇄'}${money(txn.amount)}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SCREEN 2 — ADD TRANSACTION MODAL
+   ════════════════════════════════════════════════════════════════════════ */
+function AddModal({ accounts, categories, onClose, onSuccess }) {
+  const [mounted, setMounted]     = useState(false);
+  const [amount,  setAmount]      = useState('0');
+  const [type,    setType]        = useState('expense');
+  const [catId,   setCatId]       = useState('');
+  const [accId,   setAccId]       = useState(accounts[0]?.id || '');
+  const [toAccId, setToAccId]     = useState('');
+  const [date,    setDate]        = useState(new Date().toISOString().slice(0, 10));
+  const [note,    setNote]        = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [showCatPicker, setShowCatPicker] = useState(false);
+
+  useEffect(() => { const id = setTimeout(() => setMounted(true), 10); return () => clearTimeout(id); }, []);
+
+  const selCat = categories.find(c => c.id === catId);
+  const selAcc = accounts.find(a => a.id === accId);
+
+  /* Numpad input logic */
+  const handleKey = (k) => {
+    if (k === '⌫') {
+      setAmount(prev => prev.length <= 1 ? '0' : prev.slice(0, -1));
+    } else if (k === '.') {
+      setAmount(prev => prev.includes('.') ? prev : prev + '.');
+    } else {
+      setAmount(prev => {
+        if (prev === '0') return k;
+        const parts = prev.split('.');
+        if (parts[1]?.length >= 2) return prev;
+        if (prev.replace('.', '').length >= 9) return prev;
+        return prev + k;
+      });
+    }
+  };
+
+  const handleQuick = (v) => {
+    setAmount(prev => {
+      const n = (parseFloat(prev) || 0) + v;
+      return n % 1 === 0 ? String(n) : n.toFixed(2);
+    });
+  };
+
+  const handleSubmit = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0 || !accId) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type, amount: amt,
+          account_id: accId,
+          to_account_id: type === 'transfer' ? toAccId : null,
+          category_id: catId || null,
+          date, note: note || null,
+        }),
+      });
+      if (res.ok) { onSuccess(); onClose(); }
+    } finally { setSubmitting(false); }
+  };
+
+  const relevantCats = categories.filter(c =>
+    type === 'income' ? c.type === 'income' : c.type === 'expense'
+  );
+
+  const dateLabel = (() => {
+    try { return new Date(date + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }); }
+    catch { return date; }
+  })();
+
+  /* Display amount: show raw string cleanly */
+  const displayAmt = (() => {
+    if (amount === '0') return '0';
+    const [int, dec] = amount.split('.');
+    const intFormatted = parseInt(int || '0', 10).toLocaleString('en-US');
+    if (dec === undefined) return intFormatted;
+    return intFormatted + '.' + dec;
+  })();
+
+  const typeColor = type === 'expense' ? '#F97316' : type === 'income' ? T.brand : '#6366F1';
+
+  return (
+    /* Full-screen overlay with spring slide-up */
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 50,
+      display: 'flex', flexDirection: 'column',
+      background: T.bgCard,
+      borderRadius: '32px 32px 0 0',
+      transform: mounted ? 'translateY(0)' : 'translateY(100%)',
+      transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+    }}>
+      {/* ── Top bar ───────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '20px 20px 8px',
+      }}>
+        <button onClick={onClose} style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: '#F3F4F6', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <XIcon size={16} color="#6B7280"/>
+        </button>
+        <span style={{ fontSize: 16, fontWeight: 600, color: T.textPrimary }}>Add Transaction</span>
+        <div style={{ width: 36 }}/>
+      </div>
+
+      {/* ── Type tabs ─────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
+        <div style={{ background: '#F3F4F6', borderRadius: 50, padding: 3, display: 'flex' }}>
+          {['expense', 'income', 'transfer'].map(t => (
+            <button key={t} onClick={() => { setType(t); setCatId(''); }} style={{
+              padding: '6px 16px', borderRadius: 50, border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+              background: type === t
+                ? (t === 'expense' ? '#F97316' : t === 'income' ? T.brand : '#6366F1')
+                : 'transparent',
+              color: type === t ? 'white' : T.textSec,
+              transition: 'all 180ms ease',
+            }}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Amount display ────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '10px 24px 6px',
+      }}>
+        <div style={{
+          background: typeColor, color: 'white',
+          borderRadius: 50, padding: '5px 14px',
+          fontSize: 13, fontWeight: 700, flexShrink: 0,
+        }}>
+          {selAcc?.currency || 'USD'}
+        </div>
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center',
+          justifyContent: 'flex-end', gap: 3,
+        }}>
+          <span style={{
+            fontSize: 44, fontWeight: 700, color: T.textPrimary,
+            letterSpacing: '-2px', lineHeight: 1,
+          }}>
+            {displayAmt}
+          </span>
+          <span style={{
+            width: 2, height: 44, background: T.brand, borderRadius: 2,
+            animation: 'blink 1s step-end infinite',
+          }}/>
+        </div>
+      </div>
+
+      {/* ── Form rows ─────────────────────────────────────────────────── */}
+      <div style={{
+        margin: '6px 16px', background: T.surface,
+        borderRadius: 20, overflow: 'hidden',
+        border: `1px solid ${T.border}`,
+      }}>
+        {/* Category */}
+        {type !== 'transfer' && (
+          <div onClick={() => setShowCatPicker(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+            borderBottom: `1px solid ${T.border}`, cursor: 'pointer',
+            transition: 'background 150ms',
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%',
+              background: selCat?.color || '#E5E7EB',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+            }}>
+              {selCat?.icon || '🏷️'}
+            </div>
+            <span style={{
+              flex: 1, fontSize: 15, fontWeight: 500,
+              color: selCat ? T.textPrimary : T.textSec,
+            }}>
+              {selCat?.name || 'Category'}
+            </span>
+            <ChevronIcon size={16} color={T.textSec}/>
+          </div>
+        )}
+
+        {/* Account */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+          borderBottom: type === 'transfer' ? `1px solid ${T.border}` : `1px solid ${T.border}`,
+          position: 'relative',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%', background: T.dark,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <WalletIcon size={16} color="white"/>
+          </div>
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: T.textPrimary }}>
+            {selAcc ? `${selAcc.name} (${selAcc.currency})` : 'Account'}
+          </span>
+          <select value={accId} onChange={e => setAccId(e.target.value)} style={{
+            position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%',
+          }}>
+            {accounts.map(a => (
+              <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+            ))}
+          </select>
+          <ChevronIcon size={16} color={T.textSec}/>
+        </div>
+
+        {/* To Account (transfer only) */}
+        {type === 'transfer' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+            borderBottom: `1px solid ${T.border}`, position: 'relative',
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', background: '#6366F1',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <RecurIcon size={16} color="white"/>
+            </div>
+            <span style={{
+              flex: 1, fontSize: 15, fontWeight: 500,
+              color: toAccId ? T.textPrimary : T.textSec,
+            }}>
+              {accounts.find(a => a.id === toAccId)?.name || 'To Account'}
+            </span>
+            <select value={toAccId} onChange={e => setToAccId(e.target.value)} style={{
+              position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%',
+            }}>
+              <option value="">Select…</option>
+              {accounts.filter(a => a.id !== accId).map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+            <ChevronIcon size={16} color={T.textSec}/>
+          </div>
+        )}
+
+        {/* Date */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+          borderBottom: `1px solid ${T.border}`, position: 'relative',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%', background: T.dark,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <CalendarIcon size={16} color="white"/>
+          </div>
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: T.textPrimary }}>{dateLabel}</span>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }}/>
+          <ChevronIcon size={16} color={T.textSec}/>
+        </div>
+
+        {/* Notes */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: '50%', background: T.dark,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <NotesIcon size={16} color="white"/>
+          </div>
+          <input
+            type="text" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Notes"
+            style={{
+              flex: 1, background: 'none', border: 'none', outline: 'none',
+              fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
+              color: T.textPrimary,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ── Quick amount pills ────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 8, padding: '8px 16px' }}>
+        {[4.99, 9.99, 19.99].map(v => (
+          <QuickPill key={v} value={v} onClick={() => handleQuick(v)}/>
+        ))}
+      </div>
+
+      {/* ── Numpad ───────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 8, flex: 1, padding: '0 16px 20px', minHeight: 0 }}>
+        {/* 3-col digit grid */}
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: 'repeat(4, 1fr)', gap: 8 }}>
+          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+            <NumKey key={k} onPress={() => handleKey(k)}>
+              {k === '⌫' ? <DeleteIcon size={19} color={T.textPrimary}/> : k}
+            </NumKey>
+          ))}
+        </div>
+        {/* Confirm button — full-height right column */}
+        <ConfirmKey onPress={handleSubmit} disabled={submitting}/>
+      </div>
+
+      {/* ── Category picker overlay ───────────────────────────────────── */}
+      {showCatPicker && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'white', zIndex: 10,
+          borderRadius: '32px 32px 0 0', overflowY: 'auto', padding: 20,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <button onClick={() => setShowCatPicker(false)} style={{
+              background: '#F3F4F6', border: 'none', borderRadius: '50%',
+              width: 36, height: 36, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <XIcon size={16} color="#6B7280"/>
+            </button>
+            <span style={{ fontWeight: 600, fontSize: 16 }}>Select Category</span>
+          </div>
+
+          {relevantCats.map(c => (
+            <div key={c.id} onClick={() => { setCatId(c.id); setShowCatPicker(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '14px 12px', borderRadius: 14, cursor: 'pointer',
+                marginBottom: 4,
+                background: catId === c.id ? '#E6FAF4' : 'transparent',
+                transition: 'background 150ms',
+              }}
+            >
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: c.color || '#E5E7EB',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
+              }}>
+                {c.icon}
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 600, color: T.textPrimary, flex: 1 }}>{c.name}</span>
+              {catId === c.id && <span style={{ color: T.brand, fontWeight: 700, fontSize: 18 }}>✓</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Numpad key ────────────────────────────────────────────────────────── */
+function NumKey({ children, onPress }) {
+  const [pressed, setPressed] = useState(false);
+  const press   = () => setPressed(true);
+  const release = () => { setPressed(false); onPress?.(); };
+  return (
+    <div
+      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setPressed(false)}
+      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
+      style={{
+        background: pressed ? '#E6FAF4' : T.bgCard,
+        borderRadius: 8,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', fontSize: 22, fontWeight: 500, color: T.textPrimary,
+        userSelect: 'none',
+        transform: pressed ? 'scale(0.94)' : 'scale(1)',
+        transition: 'transform 80ms ease, background 80ms ease',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ─── Confirm (enter) key ───────────────────────────────────────────────── */
+function ConfirmKey({ onPress, disabled }) {
+  const [pressed, setPressed] = useState(false);
+  const press   = () => setPressed(true);
+  const release = () => { setPressed(false); if (!disabled) onPress?.(); };
+  return (
+    <div
+      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setPressed(false)}
+      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
+      style={{
+        width: 64,
+        background: pressed ? T.brandDark : T.brand,
+        borderRadius: 14,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transform: pressed ? 'scale(0.94)' : 'scale(1)',
+        transition: 'transform 80ms ease, background 80ms ease',
+        boxShadow: '0 4px 16px rgba(0,200,150,0.35)',
+        flexShrink: 0,
+      }}
+    >
+      <EnterIcon size={26} color="white"/>
+    </div>
+  );
+}
+
+/* ─── Quick amount pill ─────────────────────────────────────────────────── */
+function QuickPill({ value, onClick }) {
+  const [active, setActive] = useState(false);
+  const [ripple, setRipple] = useState(false);
+  const press   = () => { setActive(true); setRipple(false); };
+  const release = () => {
+    setActive(false); setRipple(true);
+    onClick?.();
+    setTimeout(() => setRipple(false), 500);
+  };
+  return (
+    <button
+      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setActive(false)}
+      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
+      style={{
+        flex: 1, padding: '8px 0', borderRadius: 50, border: 'none',
+        background: active ? T.brand : '#F3F4F6',
+        color: active ? 'white' : T.textPrimary,
+        fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        fontFamily: 'inherit', transition: 'all 150ms ease',
+        position: 'relative', overflow: 'hidden',
+      }}
+    >
+      {ripple && (
+        <span style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,200,150,0.3)',
+          borderRadius: '50%', animation: 'rippleOut 500ms ease forwards',
+          pointerEvents: 'none',
+        }}/>
+      )}
+      {value.toFixed(2)}
+    </button>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SCREEN — STATS
+   ════════════════════════════════════════════════════════════════════════ */
+function StatsScreen({ transactions }) {
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {});
+  }, [transactions]);
+
+  const now = new Date();
+  const label = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const byCat   = stats?.by_category || [];
+  const bar     = stats?.bar || [];
+  const catTotal = byCat.reduce((s, c) => s + c.total, 0);
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none', padding: '52px 20px 140px' }}>
+      <div style={{ fontWeight: 700, fontSize: 22, color: T.textPrimary, marginBottom: 4 }}>Statistics</div>
+      <div style={{ color: T.textSec, fontSize: 14, marginBottom: 24 }}>{label}</div>
+
+      {/* Donut */}
+      <div style={{ background: T.bgCard, borderRadius: 20, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary, marginBottom: 20 }}>Expenses by Category</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+          <div style={{ position: 'relative', width: 150, height: 150 }}>
+            <svg viewBox="0 0 100 100" width="150" height="150" style={{ transform: 'rotate(-90deg)' }}>
+              {byCat.length > 0
+                ? byCat.reduce((acc, d, i) => {
+                    const pct  = catTotal ? d.total / catTotal : 0;
+                    const circ = 2 * Math.PI * 35;
+                    acc.circles.push(
+                      <circle key={d.name} cx="50" cy="50" r="35"
+                        fill="none"
+                        stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                        strokeWidth="18"
+                        strokeDasharray={`${pct * circ} ${circ * (1 - pct)}`}
+                        strokeDashoffset={-acc.offset * circ}
+                      />
+                    );
+                    acc.offset += pct;
+                    return acc;
+                  }, { offset: 0, circles: [] }).circles
+                : <circle cx="50" cy="50" r="35" fill="none" stroke="#E5E7EB" strokeWidth="18"/>
+              }
+              <circle cx="50" cy="50" r="26" fill="white"/>
+            </svg>
+            <div style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <div style={{ fontSize: 11, color: T.textSec, fontWeight: 500 }}>Total</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.textPrimary }}>${catTotal.toFixed(0)}</div>
+            </div>
+          </div>
+        </div>
+
+        {byCat.length === 0
+          ? <div style={{ textAlign: 'center', color: T.textSec, padding: 16 }}>No expense data this month</div>
+          : byCat.map((d, i) => (
+            <div key={d.name} style={{
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+            }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }}/>
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: T.textPrimary }}>{d.name}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.textExpense }}>${d.total.toFixed(2)}</div>
+              <div style={{ fontSize: 12, color: T.textSec, width: 34, textAlign: 'right' }}>
+                {catTotal ? Math.round(d.total / catTotal * 100) : 0}%
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Bar chart (6 months) */}
+      <div style={{ background: T.bgCard, borderRadius: 20, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary, marginBottom: 16 }}>Income vs Expenses</div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
+          {bar.map(b => {
+            const maxVal = Math.max(...bar.map(x => Math.max(x.income, x.expense)), 1);
+            const ih = Math.round((b.income  / maxVal) * 90);
+            const eh = Math.round((b.expense / maxVal) * 90);
             return (
-              <button
-                key={id}
-                onClick={action}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '8px 18px', borderRadius: 14,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: on ? 'white' : 'rgba(255,255,255,0.35)',
-                  filter: on ? 'drop-shadow(0 0 7px rgba(255,255,255,0.55))' : 'none',
-                  transform: on ? 'scale(1.2)' : 'scale(1)',
-                  transition: 'transform .22s ease, color .22s ease, filter .22s ease',
-                }}
-              >
-                <Ic s={22} c={on ? 'white' : 'rgba(255,255,255,0.35)'} />
-              </button>
+              <div key={b.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 90 }}>
+                  <div style={{ width: '44%', height: ih, background: '#00C89688', borderRadius: '4px 4px 0 0', minHeight: 2 }}/>
+                  <div style={{ width: '44%', height: eh, background: '#F9731688', borderRadius: '4px 4px 0 0', minHeight: 2 }}/>
+                </div>
+                <div style={{ fontSize: 9, color: T.textSec, fontWeight: 500 }}>{b.month.slice(5)}</div>
+              </div>
             );
           })}
         </div>
-      );
-    }
+        <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
+          <span style={{ fontSize: 12, color: T.textSec, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#00C89688' }}/>Income
+          </span>
+          <span style={{ fontSize: 12, color: T.textSec, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#F9731688' }}/>Expenses
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-    /* ═══════════════════════════════════════════════════════
-       DASHBOARD
-    ═══════════════════════════════════════════════════════ */
-    function Dashboard({ onAdd }) {
-      const [tab, setTab] = useState('today');
+/* ════════════════════════════════════════════════════════════════════════
+   SCREEN — BUDGETS
+   ════════════════════════════════════════════════════════════════════════ */
+function BudgetsScreen() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-      return (
-        <div style={{
-          height: '100%', display: 'flex', flexDirection: 'column',
-          background: 'var(--bg-app)', position: 'relative',
-        }}>
+  useEffect(() => {
+    fetch('/api/budgets').then(r => r.json()).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
 
-          {/* ── Header ───────────────────────────────────── */}
-          <div style={{
-            background: 'linear-gradient(155deg, #00D49E 0%, #00A87C 100%)',
-            borderRadius: '0 0 28px 28px',
-            padding: '50px 24px 28px',
-            position: 'relative',
-            overflow: 'hidden',
-            flexShrink: 0,
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  return (
+    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none', padding: '52px 20px 140px' }}>
+      <div style={{ fontWeight: 700, fontSize: 22, color: T.textPrimary, marginBottom: 4 }}>Budgets</div>
+      <div style={{ color: T.textSec, fontSize: 14, marginBottom: 24 }}>{now}</div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>Loading…</div>
+      ) : items.filter(b => b.budget_amount).length === 0 ? (
+        <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>📊</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>No budgets set</div>
+          <div style={{ fontSize: 13, marginTop: 8 }}>Set budgets from the Budgets page</div>
+        </div>
+      ) : (
+        items.filter(b => b.budget_amount).map(b => {
+          const pct  = b.budget_amount ? Math.min((b.spent / b.budget_amount) * 100, 100) : 0;
+          const over = pct >= 100;
+          const warn = pct >= 75;
+          const barColor = over ? '#EF4444' : warn ? '#F59E0B' : T.brand;
+          return (
+            <div key={b.id} style={{
+              background: T.bgCard, borderRadius: 20, padding: 20,
+              marginBottom: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%',
+                  background: b.color || '#E5E7EB',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+                }}>
+                  {b.icon || '💰'}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary }}>{b.name}</div>
+                  <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>
+                    ${b.spent?.toFixed(2)} spent of ${b.budget_amount?.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 700,
+                  color: over ? '#EF4444' : T.brand,
+                }}>
+                  {Math.round(pct)}%
+                </div>
+              </div>
+              <div style={{ background: '#F3F4F6', borderRadius: 999, height: 8, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 999,
+                  width: `${pct}%`,
+                  background: barColor,
+                  transition: 'width 0.5s ease',
+                }}/>
+              </div>
+              {over && (
+                <div style={{ fontSize: 12, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>
+                  Over budget!
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BOTTOM NAV
+   ════════════════════════════════════════════════════════════════════════ */
+function BottomNav({ active, setActive, onAdd }) {
+  const tabs = [
+    { id: 'dashboard', Icon: WalletIcon, label: 'Home'   },
+    { id: 'stats',     Icon: PieIcon,    label: 'Stats'  },
+    { id: 'budgets',   Icon: BellIcon,   label: 'Budget' },
+  ];
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: 24, left: 16, right: 16,
+      background: T.dark,
+      borderRadius: 28,
+      boxShadow: '0 -4px 24px rgba(0,0,0,0.12)',
+      display: 'flex', alignItems: 'center',
+      padding: '10px 12px',
+      zIndex: 40,
+    }}>
+      {tabs.map(({ id, Icon, label }) => {
+        const isActive = active === id;
+        return (
+          <button key={id} onClick={() => setActive(id)} style={{
+            flex: 1, background: 'none', border: 'none', cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            color: isActive ? 'white' : '#6B7280',
+            transform: isActive ? 'scale(1.15)' : 'scale(1)',
+            filter: isActive ? 'drop-shadow(0 0 7px rgba(255,255,255,0.45))' : 'none',
+            transition: 'all 200ms ease',
+            fontFamily: 'inherit',
           }}>
-            {/* Depth gradient at bottom */}
-            <div style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%',
-              background: 'linear-gradient(to bottom, transparent, rgba(0,50,30,0.10))',
-              pointerEvents: 'none',
-            }}/>
-            {/* Decorative circle */}
-            <div style={{
-              position: 'absolute', top: -40, right: -40,
-              width: 160, height: 160, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.06)',
-              pointerEvents: 'none',
-            }}/>
-            <div style={{
-              position: 'absolute', top: 20, right: 60,
-              width: 80, height: 80, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.05)',
-              pointerEvents: 'none',
-            }}/>
+            <Icon size={22} color={isActive ? 'white' : '#6B7280'}/>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              {label}
+            </span>
+          </button>
+        );
+      })}
 
-            {/* Row: menu icon + avatar */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              marginBottom: 20, position: 'relative',
-            }}>
-              <button style={{
-                background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 10,
-                padding: '8px 9px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                backdropFilter: 'blur(4px)',
-              }}>
-                <IcMenu s={20} c="white" />
-              </button>
+      {/* FAB-style + button */}
+      <button onClick={onAdd} style={{
+        width: 52, height: 52, borderRadius: '50%',
+        background: T.brand, border: 'none', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 18px rgba(0,200,150,0.5)',
+        flexShrink: 0, marginLeft: 4,
+        transition: 'transform 200ms ease, box-shadow 200ms ease',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.12)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+      >
+        <PlusIcon size={24} color="white"/>
+      </button>
+    </div>
+  );
+}
 
-              <div style={{
-                width: 36, height: 36, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #FFD166 0%, #FF6B6B 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'white', fontSize: 12, fontWeight: 700,
-                border: '2px solid rgba(255,255,255,0.5)',
-                letterSpacing: '0.5px',
-              }}>SH</div>
-            </div>
+/* ════════════════════════════════════════════════════════════════════════
+   ROOT APP
+   ════════════════════════════════════════════════════════════════════════ */
+function App() {
+  const [screen,   setScreen]   = useState('dashboard');
+  const [showAdd,  setShowAdd]  = useState(false);
+  const [tab,      setTab]      = useState('month');
+  const [accounts, setAccounts] = useState([]);
+  const [txns,     setTxns]     = useState([]);
+  const [cats,     setCats]     = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [tick,     setTick]     = useState(0);   // refresh counter
 
-            {/* Budget label */}
-            <div style={{ color: 'white', opacity: 0.85, fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-              My budget
-            </div>
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      fetch('/api/accounts').then(r => r.json()).catch(() => []),
+      fetch('/api/transactions?p=month').then(r => r.json()).catch(() => []),
+      fetch('/api/categories').then(r => r.json()).catch(() => []),
+    ]).then(([accs, ts, cs]) => {
+      setAccounts(Array.isArray(accs) ? accs : []);
+      setTxns(Array.isArray(ts) ? ts : []);
+      setCats(Array.isArray(cs) ? cs : []);
+      setLoading(false);
+    });
+  }, []);
 
-            {/* Animated balance */}
-            <BalanceCounter />
-          </div>
+  useEffect(() => { load(); }, [load, tick]);
 
-          {/* ── Toggle tabs ─────────────────────────────── */}
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '18px 0 0', flexShrink: 0 }}>
-            <div style={{
-              background: 'white', borderRadius: 50, padding: 4,
-              display: 'inline-flex', position: 'relative',
-              boxShadow: '0 2px 14px rgba(0,0,0,0.07)',
-            }}>
-              {/* Sliding pill indicator */}
-              <div style={{
-                position: 'absolute', top: 4, bottom: 4,
-                width: 92, borderRadius: 50,
-                background: '#1C2033',
-                left: tab === 'today' ? 4 : 96,
-                transition: 'left 210ms cubic-bezier(0.4, 0, 0.2, 1)',
-                pointerEvents: 'none',
-              }}/>
-              {['today', 'month'].map(t => (
-                <button key={t}
-                  onClick={() => setTab(t)}
-                  style={{
-                    position: 'relative', zIndex: 1,
-                    width: 92, padding: '9px 0',
-                    border: 'none', background: 'none', cursor: 'pointer',
-                    fontSize: 14, fontWeight: 600,
-                    color: tab === t ? 'white' : '#9CA3AF',
-                    transition: 'color 210ms ease',
-                    borderRadius: 50,
-                    fontFamily: "'DM Sans', sans-serif",
-                    textAlign: 'center',
-                  }}
-                >{t === 'today' ? 'Today' : 'Month'}</button>
-              ))}
-            </div>
-          </div>
+  return (
+    <div style={{
+      width: 390, height: 844,
+      borderRadius: 40, overflow: 'hidden',
+      boxShadow: '0 32px 80px rgba(0,0,0,0.18)',
+      position: 'relative',
+      background: T.bgApp,
+    }}>
+      {screen === 'dashboard' && (
+        <Dashboard
+          accounts={accounts} transactions={txns}
+          activeTab={tab} setActiveTab={setTab}
+          loading={loading}
+        />
+      )}
+      {screen === 'stats'   && <StatsScreen   transactions={txns}/>}
+      {screen === 'budgets' && <BudgetsScreen/>}
 
-          {/* ── Date row ─────────────────────────────────── */}
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '18px 24px 10px', flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: '#1C2033' }}>18 May 2020</span>
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#00C896' }}>270</span>
-          </div>
+      <BottomNav active={screen} setActive={setScreen} onAdd={() => setShowAdd(true)}/>
 
-          {/* ── Transaction list ─────────────────────────── */}
-          <div style={{ flex: 1, padding: '0 20px', overflowY: 'auto', paddingBottom: 100 }} className="no-scroll">
-            <div style={{
-              background: 'white', borderRadius: 20,
-              padding: '2px 14px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-            }}>
-              {TXNS.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)}
-            </div>
-          </div>
+      {showAdd && (
+        <AddModal
+          accounts={accounts}
+          categories={cats}
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => setTick(t => t + 1)}
+        />
+      )}
+    </div>
+  );
+}
 
-          {/* ── Bottom Nav ───────────────────────────────── */}
-          <BottomNav active="wallet" onAdd={onAdd} />
-        </div>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       NUMPAD KEY
-    ═══════════════════════════════════════════════════════ */
-    function NumKey({ label, row, col, onPress }) {
-      const [pressed, setPressed] = useState(false);
-      const [hover,   setHover]   = useState(false);
-
-      const fire = () => {
-        setPressed(true);
-        setTimeout(() => setPressed(false), 90);
-        onPress(label);
-      };
-
-      return (
-        <button
-          onClick={fire}
-          onMouseEnter={() => setHover(true)}
-          onMouseLeave={() => setHover(false)}
-          style={{
-            gridRow: row, gridColumn: col,
-            background: hover ? '#DDFFF5' : 'white',
-            border: 'none', cursor: 'pointer',
-            fontSize: 22, fontWeight: 500,
-            color: '#1C2033', borderRadius: 10,
-            height: 54,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transform: pressed ? 'scale(0.94)' : 'scale(1)',
-            transition: 'transform 90ms ease, background 120ms ease',
-            fontFamily: "'DM Sans', sans-serif",
-            boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
-          }}
-        >
-          {label === '⌫' ? <IcBack s={20} c="#1C2033" /> : label}
-        </button>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       CONFIRM KEY
-    ═══════════════════════════════════════════════════════ */
-    function ConfirmKey({ onPress }) {
-      const [pressed, setPressed] = useState(false);
-
-      const fire = () => {
-        setPressed(true);
-        setTimeout(() => { setPressed(false); onPress(); }, 130);
-      };
-
-      return (
-        <button
-          onClick={fire}
-          style={{
-            gridRow: '1 / span 4', gridColumn: 4,
-            background: 'linear-gradient(160deg, #00D49E 0%, #009E72 100%)',
-            border: 'none', cursor: 'pointer',
-            borderRadius: 14,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transform: pressed ? 'scale(0.95)' : 'scale(1)',
-            transition: 'transform 90ms ease',
-            boxShadow: '0 6px 24px rgba(0,200,150,0.38)',
-          }}
-        >
-          <IcEnter s={26} c="white" />
-        </button>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       QUICK PILL
-    ═══════════════════════════════════════════════════════ */
-    function QuickPill({ value, onTap }) {
-      const [hover,  setHover]  = useState(false);
-      const [ripple, setRipple] = useState(false);
-      const [rKey,   setRKey]   = useState(0);
-
-      const fire = () => {
-        setRipple(true);
-        setRKey(k => k + 1);
-        setTimeout(() => setRipple(false), 620);
-        onTap();
-      };
-
-      return (
-        <button
-          onClick={fire}
-          onMouseEnter={() => setHover(true)}
-          onMouseLeave={() => setHover(false)}
-          style={{
-            position: 'relative', overflow: 'hidden',
-            flex: 1, padding: '11px 0',
-            background: hover ? '#00C896' : '#F0F4F8',
-            border: 'none', borderRadius: 50,
-            cursor: 'pointer',
-            fontSize: 14, fontWeight: 600,
-            color: hover ? 'white' : '#1C2033',
-            transition: 'background .15s ease, color .15s ease',
-            fontFamily: "'DM Sans', sans-serif",
-          }}
-        >
-          {ripple && (
-            <span key={rKey} style={{
-              position: 'absolute', top: '50%', left: '50%',
-              width: 10, height: 10,
-              marginLeft: -5, marginTop: -5,
-              borderRadius: '50%',
-              background: 'rgba(255,255,255,0.6)',
-              animation: 'ripple-out .62s ease-out forwards',
-              pointerEvents: 'none',
-            }}/>
-          )}
-          {value}
-        </button>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       FORM ROW (category / date / notes)
-    ═══════════════════════════════════════════════════════ */
-    function FormRow({ icon, iconBg, iconDark, label, isPlaceholder, chevron, last }) {
-      const [hover, setHover] = useState(false);
-      return (
-        <div
-          onMouseEnter={() => setHover(true)}
-          onMouseLeave={() => setHover(false)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            height: 62, padding: '0 16px',
-            cursor: 'pointer',
-            borderBottom: last ? 'none' : '1px solid var(--border)',
-            background: hover ? '#F8FAFB' : 'transparent',
-            transition: 'background .15s ease',
-          }}
-        >
-          <div style={{
-            width: 38, height: 38, borderRadius: '50%',
-            background: iconBg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: iconDark ? 15 : 19,
-            color: iconDark ? 'white' : 'inherit',
-            flexShrink: 0,
-            fontFamily: 'sans-serif',
-          }}>{icon}</div>
-
-          <span style={{
-            flex: 1, fontSize: 15, fontWeight: 500,
-            color: isPlaceholder ? '#9CA3AF' : '#1C2033',
-          }}>{label}</span>
-
-          {chevron && <IcChevR s={16} c="#C4C9D4" />}
-        </div>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       ADD TRANSACTION MODAL
-    ═══════════════════════════════════════════════════════ */
-    function AddTransaction({ onClose }) {
-      const [amount, setAmount] = useState('2,6');
-      const [open,   setOpen]   = useState(false);
-
-      useEffect(() => {
-        // Defer one tick so the initial translateY(100%) is painted first
-        const t = setTimeout(() => setOpen(true), 16);
-        return () => clearTimeout(t);
-      }, []);
-
-      const close = () => {
-        setOpen(false);
-        setTimeout(onClose, 340);
-      };
-
-      const handleKey = k => {
-        if (k === '⌫') {
-          setAmount(p => p.length > 1 ? p.slice(0, -1) : '0');
-        } else if (k === ',') {
-          setAmount(p => p.includes(',') ? p : p + ',');
-        } else {
-          setAmount(p => p === '0' ? k : p + k);
-        }
-      };
-
-      const addQuick = val => {
-        const n = parseFloat(val.replace(',', '.'));
-        setAmount(p => {
-          const cur = parseFloat(p.replace(',', '.')) || 0;
-          return (cur + n).toFixed(2).replace('.', ',');
-        });
-      };
-
-      const NUM_KEYS = ['1','2','3','4','5','6','7','8','9',',','0','⌫'];
-
-      return (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 50,
-          background: open ? 'rgba(10,20,40,0.28)' : 'rgba(10,20,40,0)',
-          backdropFilter: open ? 'blur(3px)' : 'blur(0px)',
-          transition: 'background .32s ease, backdrop-filter .32s ease',
-          display: 'flex', alignItems: 'flex-end',
-        }}>
-          <div style={{
-            width: '100%',
-            background: 'white',
-            borderRadius: '28px 28px 0 0',
-            transform: open ? 'translateY(0)' : 'translateY(100%)',
-            transition: 'transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-            overflow: 'hidden',
-          }}>
-            {/* Drag handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10 }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E5E7EB' }}/>
-            </div>
-
-            {/* Top bar */}
-            <div style={{
-              display: 'flex', alignItems: 'center',
-              padding: '10px 20px 14px', position: 'relative',
-            }}>
-              <button
-                onClick={close}
-                style={{
-                  width: 36, height: 36, borderRadius: '50%',
-                  background: '#F3F4F6', border: 'none', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background .15s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#E5E7EB'}
-                onMouseLeave={e => e.currentTarget.style.background = '#F3F4F6'}
-              >
-                <IcX s={15} c="#1C2033" />
-              </button>
-              <span style={{
-                position: 'absolute', left: 0, right: 0,
-                textAlign: 'center', fontSize: 16, fontWeight: 600, color: '#1C2033',
-                pointerEvents: 'none',
-              }}>Add Transaction</span>
-            </div>
-
-            {/* Amount input */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 14,
-              padding: '2px 20px 20px',
-            }}>
-              <div style={{
-                background: '#00C896', color: 'white',
-                padding: '6px 18px', borderRadius: 50,
-                fontSize: 13, fontWeight: 600, flexShrink: 0,
-                boxShadow: '0 2px 10px rgba(0,200,150,0.35)',
-              }}>USD</div>
-
-              <div className="cursor-blink" style={{
-                flex: 1, textAlign: 'right',
-                fontSize: 46, fontWeight: 700,
-                color: '#1C2033', letterSpacing: '-1px',
-                fontFamily: "'DM Sans', sans-serif",
-                lineHeight: 1.1,
-              }}>{amount}</div>
-            </div>
-
-            {/* Form fields */}
-            <div style={{
-              margin: '0 20px',
-              borderRadius: 16,
-              background: '#FAFBFC',
-              border: '1px solid #EFF0F2',
-              overflow: 'hidden',
-            }}>
-              <FormRow icon="🥑" iconBg="#E0F7FA" iconDark={false} label="Food & Drink" chevron={true}  last={false} />
-              <FormRow icon="📅" iconBg="#1C2033" iconDark={true}  label="18 May 2020"  chevron={false} last={false} />
-              <FormRow icon="≡"  iconBg="#1C2033" iconDark={true}  label="Notes"  isPlaceholder={true} chevron={false} last={true} />
-            </div>
-
-            {/* Quick pills */}
-            <div style={{ display: 'flex', gap: 8, padding: '14px 20px 10px' }}>
-              {['4,99', '9,99', '19,99'].map(v => (
-                <QuickPill key={v} value={v} onTap={() => addQuick(v)} />
-              ))}
-            </div>
-
-            {/* Numpad */}
-            <div style={{
-              padding: '4px 20px 34px',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr) 1.1fr',
-              gridTemplateRows: 'repeat(4, 54px)',
-              gap: 9,
-            }}>
-              {NUM_KEYS.map((k, i) => (
-                <NumKey
-                  key={i}
-                  label={k}
-                  row={Math.floor(i / 3) + 1}
-                  col={(i % 3) + 1}
-                  onPress={handleKey}
-                />
-              ))}
-              <ConfirmKey onPress={close} />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    /* ═══════════════════════════════════════════════════════
-       APP ROOT
-    ═══════════════════════════════════════════════════════ */
-    function App() {
-      const [showAdd, setShowAdd] = useState(false);
-
-      return (
-        <div style={{
-          width: 390, height: 844,
-          background: '#F0F4F8',
-          borderRadius: 40,
-          overflow: 'hidden',
-          position: 'relative',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.20)',
-        }}>
-          <Dashboard onAdd={() => setShowAdd(true)} />
-          {showAdd && (
-            <AddTransaction onClose={() => setShowAdd(false)} />
-          )}
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-  </script>
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
 </body>
 </html>
