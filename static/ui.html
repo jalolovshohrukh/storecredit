@@ -29,22 +29,63 @@
     @keyframes modalUp  { from{transform:translateY(100%)} to{transform:translateY(0)} }
     ::-webkit-scrollbar { display: none; }
 
+    /* dark: invert calendar icon so it appears light */
     input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
+    /* light: keep native dark icon */
+    [data-theme="light"] input[type=date]::-webkit-calendar-picker-indicator { filter: none; opacity: 0.6; }
+
+    /* ── CSS custom properties ───────────────────────────────────────────── */
+    :root {
+      --bg:      #151515;
+      --bg2:     #1A1A1D;
+      --bg3:     #1E1E22;
+      --bg4:     #252528;
+      --bg5:     #2A2A2E;
+      --bg6:     #191919;
+      --bg7:     #222226;
+      --nav:     #222222;
+      --border:  rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.08);
+      --border3: rgba(255,255,255,0.12);
+      --dashed:  rgba(255,255,255,0.18);
+      --t1:      #FFFFFF;
+      --t2:      rgba(255,255,255,0.55);
+      --t3:      rgba(255,255,255,0.35);
+    }
+    [data-theme="light"] {
+      --bg:      #F2F2F7;
+      --bg2:     #FFFFFF;
+      --bg3:     #FFFFFF;
+      --bg4:     #F2F2F7;
+      --bg5:     #E5E5EA;
+      --bg6:     #FFFFFF;
+      --bg7:     #E5E5EA;
+      --nav:     #FFFFFF;
+      --border:  rgba(0,0,0,0.08);
+      --border2: rgba(0,0,0,0.06);
+      --border3: rgba(0,0,0,0.12);
+      --dashed:  rgba(0,0,0,0.15);
+      --t1:      #000000;
+      --t2:      rgba(0,0,0,0.55);
+      --t3:      rgba(0,0,0,0.40);
+    }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useCallback, useRef } = React;
+const { useState, useEffect, useCallback, useRef, useContext, createContext } = React;
+
+const ThemeCtx = createContext(false); // false = dark, true = light
 
 /* ── Colours ────────────────────────────────────────────────────────────── */
-const APP_BG    = '#151515';
-const NAV_BG    = '#222222';
-const CARD_BORDER = 'rgba(255,255,255,0.07)';
-const T1 = '#FFFFFF';
-const T2 = 'rgba(255,255,255,0.55)';
-const T3 = 'rgba(255,255,255,0.35)';
+const APP_BG      = 'var(--bg)';
+const NAV_BG      = 'var(--nav)';
+const CARD_BORDER = 'var(--border)';
+const T1 = 'var(--t1)';
+const T2 = 'var(--t2)';
+const T3 = 'var(--t3)';
 
 /* 10 dark-muted card backgrounds + matching bright icon-circle colour */
 const PALETTES = [
@@ -60,10 +101,24 @@ const PALETTES = [
   { bg:'#142C1E', cc:'#16A085' },
 ];
 
-function palette(str) {
+const PALETTES_LIGHT = [
+  { bg:'#D1FAE5', cc:'#059669' },
+  { bg:'#FEE2E2', cc:'#DC2626' },
+  { bg:'#DBEAFE', cc:'#2563EB' },
+  { bg:'#FEF3C7', cc:'#D97706' },
+  { bg:'#ECFCCB', cc:'#65A30D' },
+  { bg:'#CCFBF1', cc:'#0D9488' },
+  { bg:'#FEF9C3', cc:'#CA8A04' },
+  { bg:'#EDE9FE', cc:'#7C3AED' },
+  { bg:'#FFEDD5', cc:'#EA580C' },
+  { bg:'#D1FAE5', cc:'#059669' },
+];
+
+function palette(str, light = false) {
   let h = 0;
   for (let i = 0; i < (str||'').length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; }
-  return PALETTES[Math.abs(h) % PALETTES.length];
+  const idx = Math.abs(h) % PALETTES.length;
+  return light ? PALETTES_LIGHT[idx] : PALETTES[idx];
 }
 
 /* ── Currency formatting ────────────────────────────────────────────────── */
@@ -118,18 +173,20 @@ const IChevL = p => <I {...p}><polyline points="15 18 9 12 15 6"/></I>;
 const IPlus  = p => <I {...p} w={2.5}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></I>;
 const IClose = p => <I {...p} w={2.5}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></I>;
 const IEdit  = p => <I {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></I>;
-const IDel   = p => <I {...p}><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></I>;
+const IDel   = p => <I {...p}><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></I>;
 const IEnter = p => <I {...p} w={2.5}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></I>;
 const ICal   = p => <I {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></I>;
 const INote  = p => <I {...p}><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></I>;
 const IDown  = p => <I {...p}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></I>;
 const IUp    = p => <I {...p}><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></I>;
 const ITrash = p => <I {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></I>;
+const ISun   = p => <I {...p}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></I>;
+const IMoon  = p => <I {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></I>;
 
 /* ════════════════════════════════════════════════════════════════════════
    HOME SCREEN — category grid
    ════════════════════════════════════════════════════════════════════════ */
-function HomeScreen({ accounts, currency, onAccountChange }) {
+function HomeScreen({ accounts, onAccountChange, onToggleTheme }) {
   const [period,     setPeriod]     = useState('all');
   const [showDrop,   setShowDrop]   = useState(false);
   const [editMode,   setEditMode]   = useState(false);
@@ -138,8 +195,9 @@ function HomeScreen({ accounts, currency, onAccountChange }) {
   const [selAccId,   setSelAccId]   = useState('');
   const [addCatOpen, setAddCatOpen] = useState(false);
   const [addCatType, setAddCatType] = useState('expense');
-  const [addTxnCat,  setAddTxnCat]  = useState(null);   // category card tapped
+  const [addTxnCat,  setAddTxnCat]  = useState(null);
 
+  const lm     = useContext(ThemeCtx);
   const selAcc = accounts.find(a => a.id === selAccId) || accounts[0];
   const cur    = selAcc?.currency || 'USD';
 
@@ -206,10 +264,22 @@ function HomeScreen({ accounts, currency, onAccountChange }) {
           </button>
         </div>
 
-        {/* avatar / edit toggle */}
+        {/* light/dark toggle */}
+        <button onClick={onToggleTheme} style={{
+          width:34, height:34, borderRadius:'50%',
+          background:'var(--bg5)',
+          border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+          transition:'background 200ms',
+          marginRight:4,
+        }}>
+          {lm ? <IMoon s={15} c={T2}/> : <ISun s={15} c={T2}/>}
+        </button>
+
+        {/* edit toggle */}
         <button onClick={() => setEditMode(e => !e)} style={{
           width:34, height:34, borderRadius:'50%',
-          background: editMode ? '#5B4DD3' : '#2A2A2E',
+          background: editMode ? '#5B4DD3' : 'var(--bg5)',
           border:'none', cursor:'pointer',
           display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
           transition:'background 200ms',
@@ -249,7 +319,7 @@ function HomeScreen({ accounts, currency, onAccountChange }) {
 
         {/* AI Log footer */}
         <div style={{ display:'flex', justifyContent:'center', padding:'20px 0 100px' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, background:'#1E1E22', borderRadius:50, padding:'9px 20px', cursor:'pointer' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, background:'var(--bg3)', borderRadius:50, padding:'9px 20px', cursor:'pointer' }}>
             <span style={{ fontSize:16 }}>⚙️</span>
             <span style={{ fontSize:13, fontWeight:600, color:T2, letterSpacing:0.3 }}>AI Log</span>
           </div>
@@ -260,17 +330,17 @@ function HomeScreen({ accounts, currency, onAccountChange }) {
       {showDrop && (
         <div style={{
           position:'absolute', top:96, left:12, right:12, zIndex:200,
-          background:'#1E1E22', borderRadius:18,
-          boxShadow:'0 16px 48px rgba(0,0,0,0.7)',
+          background:'var(--bg3)', borderRadius:18,
+          boxShadow:'0 16px 48px rgba(0,0,0,0.3)',
           animation:'dropIn 180ms ease both',
           overflow:'hidden',
-          border:`1px solid rgba(255,255,255,0.08)`,
+          border:`1px solid var(--border2)`,
         }}>
           <div style={{ padding:'14px 18px 8px' }}>
             <span style={{ fontSize:11, fontWeight:700, color:T3, letterSpacing:1.2, textTransform:'uppercase' }}>Select Ledger</span>
           </div>
           {[{ id:'', name:'All Accounts', currency:'' }, ...accounts].map((a, i) => {
-            const pal  = palette(a.name);
+            const pal  = palette(a.name, lm);
             const isActive = (selAccId === a.id) || (!selAccId && !a.id);
             return (
               <div key={a.id || 'all'} onClick={() => pickLedger(a.id)} style={{
@@ -279,14 +349,14 @@ function HomeScreen({ accounts, currency, onAccountChange }) {
                 borderLeft: isActive ? '3px solid #2ECC71' : '3px solid transparent',
                 transition:'background 120ms',
               }}
-                onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}
+                onMouseEnter={e => e.currentTarget.style.background='var(--border2)'}
                 onMouseLeave={e => e.currentTarget.style.background='transparent'}
               >
                 <div style={{
                   width:36, height:36, borderRadius:10,
-                  background: a.id ? pal.bg : '#252528',
+                  background: a.id ? pal.bg : 'var(--bg4)',
                   display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:16, flexShrink:0, border:`1px solid rgba(255,255,255,0.08)`,
+                  fontSize:16, flexShrink:0, border:`1px solid var(--border2)`,
                 }}>
                   {a.id ? <span style={{ color:pal.cc, fontSize:17 }}>$</span> : <span style={{ fontSize:17 }}>🏦</span>}
                 </div>
@@ -344,7 +414,7 @@ function Section({ label, total, currency, cats, editMode, onDelete, onAdd, onCa
         </span>
         <div style={{
           width:26, height:26, borderRadius:8,
-          background:'#2A2A2E',
+          background:'var(--bg5)',
           display:'flex', alignItems:'center', justifyContent:'center',
           cursor:'pointer',
         }}>
@@ -361,11 +431,11 @@ function Section({ label, total, currency, cats, editMode, onDelete, onAdd, onCa
         {/* add card — always show in edit mode, also show when list is empty */}
         {(editMode || cats.length === 0) && (
           <div onClick={onAdd} style={{
-            borderRadius:14, border:'1.5px dashed rgba(255,255,255,0.18)',
+            borderRadius:14, border:'1.5px dashed var(--dashed)',
             minHeight:148, display:'flex', alignItems:'center', justifyContent:'center',
             cursor:'pointer', flexDirection:'column', gap:8,
           }}>
-            <div style={{ width:48, height:48, borderRadius:'50%', background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <div style={{ width:48, height:48, borderRadius:'50%', background:'var(--border2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <IPlus s={22} c={T3}/>
             </div>
             <span style={{ fontSize:12, color:T3, fontWeight:600 }}>Add</span>
@@ -379,7 +449,8 @@ function Section({ label, total, currency, cats, editMode, onDelete, onAdd, onCa
 /* ── Category Card ──────────────────────────────────────────────────────── */
 function CategoryCard({ cat, currency, editMode, onDelete, onTap }) {
   const [pressed, setPressed] = useState(false);
-  const pal = palette(cat.id || cat.name);
+  const lm  = useContext(ThemeCtx);
+  const pal = palette(cat.id || cat.name, lm);
   const pct = cat.budget_amount ? Math.min(cat.total / cat.budget_amount, 1) : 0;
   const hasBudget = !!cat.budget_amount;
 
@@ -429,7 +500,7 @@ function CategoryCard({ cat, currency, editMode, onDelete, onTap }) {
 
       {/* budget progress strip at very bottom */}
       {hasBudget && (
-        <div style={{ height:3, background:'rgba(255,255,255,0.08)' }}>
+        <div style={{ height:3, background:'var(--border2)' }}>
           <div style={{
             height:'100%',
             width:`${pct * 100}%`,
@@ -498,7 +569,7 @@ function AddCategoryModal({ type, onClose, onSuccess }) {
         <div>
           <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:6 }}>NAME</label>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Marketing"
-            style={{ width:'100%', background:'#252528', border:`1px solid rgba(255,255,255,0.12)`, borderRadius:12, padding:'12px 14px', color:T1, fontSize:14, fontWeight:500, fontFamily:'inherit', outline:'none' }}/>
+            style={{ width:'100%', background:'var(--bg4)', border:`1px solid var(--border3)`, borderRadius:12, padding:'12px 14px', color:T1, fontSize:14, fontWeight:500, fontFamily:'inherit', outline:'none' }}/>
         </div>
         {/* icon picker */}
         <div>
@@ -507,7 +578,7 @@ function AddCategoryModal({ type, onClose, onSuccess }) {
             {ICON_OPTIONS.map(ic => (
               <button key={ic} onClick={() => setIcon(ic)} style={{
                 width:42, height:42, borderRadius:12, border:'none', cursor:'pointer',
-                background: icon === ic ? '#5B4DD3' : '#252528',
+                background: icon === ic ? '#5B4DD3' : 'var(--bg4)',
                 fontSize:20,
                 transition:'background 120ms',
               }}>{ic}</button>
@@ -517,7 +588,7 @@ function AddCategoryModal({ type, onClose, onSuccess }) {
         {/* submit */}
         <button onClick={submit} disabled={!name.trim() || busy} style={{
           padding:'14px 0', borderRadius:14, border:'none', cursor: !name.trim()||busy ? 'not-allowed' : 'pointer',
-          background: !name.trim()||busy ? '#2A2A2E' : '#5B4DD3',
+          background: !name.trim()||busy ? 'var(--bg5)' : '#5B4DD3',
           color:T1, fontSize:15, fontWeight:700, fontFamily:'inherit',
           transition:'background 150ms',
         }}>
@@ -540,8 +611,9 @@ function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
   const [busy,   setBusy]  = useState(false);
   useEffect(() => { setTimeout(() => setOn(true), 10); }, []);
 
+  const lm     = useContext(ThemeCtx);
   const selAcc = accounts.find(a => a.id === accId);
-  const pal    = palette(preCategory.id || preCategory.name);
+  const pal    = palette(preCategory.id || preCategory.name, lm);
   const isExp  = preCategory.type === 'expense';
   const accentC = isExp ? '#E74C3C' : '#2ECC71';
 
@@ -602,7 +674,7 @@ function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
       </div>
 
       {/* form rows */}
-      <div style={{ margin:'0 16px', background:'#1E1E22', borderRadius:16, overflow:'hidden', border:`1px solid rgba(255,255,255,0.08)` }}>
+      <div style={{ margin:'0 16px', background:'var(--bg3)', borderRadius:16, overflow:'hidden', border:`1px solid var(--border2)` }}>
         {/* account */}
         <TRow icon={<span style={{fontSize:16}}>🏦</span>} label={selAcc?`${selAcc.name} · ${selAcc.currency}`:'Account'}>
           <select value={accId} onChange={e => setAccId(e.target.value)}
@@ -617,7 +689,7 @@ function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
         </TRow>
         {/* note */}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px' }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:'var(--border2)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <INote s={14} c={T2}/>
           </div>
           <input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Add a note…"
@@ -643,8 +715,8 @@ function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
 /* ── Form row ───────────────────────────────────────────────────────────── */
 function TRow({ icon, label, children }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:`1px solid rgba(255,255,255,0.07)`, position:'relative' }}>
-      <div style={{ width:32, height:32, borderRadius:8, background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:`1px solid var(--border)`, position:'relative' }}>
+      <div style={{ width:32, height:32, borderRadius:8, background:'var(--border2)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
         {icon}
       </div>
       <span style={{ flex:1, fontSize:14, fontWeight:500, color:T1 }}>{label}</span>
@@ -660,19 +732,23 @@ function ModalShell({ on, onClose, title, children }) {
     <div style={{
       position:'absolute', inset:0, zIndex:300,
       display:'flex', flexDirection:'column',
-      background:'#191919',
+      background:'var(--bg6)',
       borderRadius:'24px 24px 0 0',
       transform: on ? 'translateY(0)' : 'translateY(100%)',
       transition:'transform 300ms cubic-bezier(0.34,1.56,0.64,1)',
     }}>
       {/* drag handle */}
       <div style={{ display:'flex', justifyContent:'center', paddingTop:12 }}>
-        <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.15)' }}/>
+        <div style={{ width:36, height:4, borderRadius:2, background:'var(--border2)' }}/>
       </div>
-      {/* header */}
+      {/* header with back button */}
       <div style={{ display:'flex', alignItems:'center', padding:'10px 20px 14px' }}>
-        <button onClick={onClose} style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,0.08)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <IClose s={14} c={T2}/>
+        <button onClick={onClose} style={{
+          width:34, height:34, borderRadius:'50%',
+          background:'var(--border2)', border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>
+          <IChevL s={18} c={T2} w={2.5}/>
         </button>
         {title && <div style={{ flex:1, textAlign:'center', fontSize:16, fontWeight:700, color:T1, marginRight:34 }}>{title}</div>}
         {!title && <div style={{ flex:1 }}/>}
@@ -690,12 +766,12 @@ function NK({ children, onP, accent }) {
       onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); onP?.(); }} onMouseLeave={() => sp(false)}
       onTouchStart={() => sp(true)} onTouchEnd={e => { e.preventDefault(); sp(false); onP?.(); }}
       style={{
-        background: p ? accent + '22' : '#222226',
+        background: p ? accent + '22' : 'var(--bg7)',
         borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center',
         cursor:'pointer', fontSize:20, fontWeight:700, color:T1, userSelect:'none',
         transform: p ? 'scale(0.91)' : 'scale(1)',
         transition:'transform 65ms, background 65ms',
-        border:`1px solid rgba(255,255,255,0.06)`,
+        border:`1px solid var(--border)`,
       }}
     >{children}</div>
   );
@@ -747,7 +823,7 @@ function TxnsScreen({ accounts }) {
             <button key={v} onClick={() => setFilter(v)} style={{
               padding:'7px 16px', borderRadius:50, border:'none', cursor:'pointer',
               fontFamily:'inherit', fontSize:13, fontWeight:600, flexShrink:0,
-              background: filter === v ? '#5B4DD3' : '#1E1E22',
+              background: filter === v ? '#5B4DD3' : 'var(--bg3)',
               color: filter === v ? T1 : T2,
               transition:'all 160ms',
             }}>{l}</button>
@@ -771,15 +847,16 @@ function TxnsScreen({ accounts }) {
 
 function TxnRow({ t, i, currency }) {
   const [vis, setVis] = useState(false);
+  const lm = useContext(ThemeCtx);
   useEffect(() => { const id = setTimeout(() => setVis(true), i*50); return () => clearTimeout(id); }, [i]);
   const isExp = t.type==='expense', isInc = t.type==='income';
-  const pal   = palette(t.category_id || t.cat_name || t.type);
+  const pal   = palette(t.category_id || t.cat_name || t.type, lm);
   const dt    = t.date ? new Date(t.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
   return (
     <div style={{
       display:'flex', alignItems:'center', gap:12, padding:'11px 12px',
       borderRadius:14, marginBottom:5,
-      background:'#1A1A1D',
+      background:'var(--bg2)',
       opacity:vis?1:0, transform:vis?'translateY(0)':'translateY(6px)',
       transition:'opacity 180ms, transform 180ms',
     }}>
@@ -803,6 +880,7 @@ function TxnRow({ t, i, currency }) {
    ACCOUNT SCREEN
    ════════════════════════════════════════════════════════════════════════ */
 function AccountScreen({ accounts }) {
+  const lm    = useContext(ThemeCtx);
   const total = accounts.reduce((s,a) => s + (a.balance||0), 0);
   const cur   = accounts[0]?.currency || 'USD';
   return (
@@ -818,11 +896,11 @@ function AccountScreen({ accounts }) {
               <div style={{ fontWeight:700, color:T2 }}>No accounts yet</div>
             </div>
           : accounts.map((a, i) => {
-              const pal = palette(a.id || a.name);
+              const pal = palette(a.id || a.name, lm);
               return (
                 <div key={a.id} style={{
-                  background:'#1A1A1D', borderRadius:18, padding:'16px 18px', marginBottom:10,
-                  border:`1px solid rgba(255,255,255,0.07)`,
+                  background:'var(--bg2)', borderRadius:18, padding:'16px 18px', marginBottom:10,
+                  border:`1px solid var(--border)`,
                   animation:`fadeUp 180ms ${i*50}ms ease both`,
                 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:14 }}>
@@ -852,6 +930,7 @@ function AccountScreen({ accounts }) {
 function BudgetScreen({ accounts }) {
   const [items, setItems]   = useState([]);
   const [loading, setLoad]  = useState(true);
+  const lm  = useContext(ThemeCtx);
   const cur = accounts[0]?.currency || 'USD';
   useEffect(() => {
     fetch('/api/budgets').then(r=>r.json()).then(d=>{setItems(d);setLoad(false);}).catch(()=>setLoad(false));
@@ -867,10 +946,10 @@ function BudgetScreen({ accounts }) {
         <h1 style={{ fontSize:26, fontWeight:800, color:T1 }}>Budget</h1>
         <p style={{ fontSize:13, color:T3, marginBottom:20 }}>{new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})}</p>
         {wb.length > 0 && (
-          <div style={{ background:'#1A1A1D', borderRadius:20, padding:20, marginBottom:20, border:`1px solid rgba(255,255,255,0.07)`, display:'flex', alignItems:'center', gap:20 }}>
+          <div style={{ background:'var(--bg2)', borderRadius:20, padding:20, marginBottom:20, border:`1px solid var(--border)`, display:'flex', alignItems:'center', gap:20 }}>
             <div style={{ position:'relative', width:78, height:78, flexShrink:0 }}>
               <svg width="78" height="78" viewBox="0 0 78 78">
-                <circle cx="39" cy="39" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="9"/>
+                <circle cx="39" cy="39" r={R} fill="none" stroke="var(--border2)" strokeWidth="9"/>
                 <circle cx="39" cy="39" r={R} fill="none"
                   stroke={op>=100?'#EF4444':op>=75?'#F59E0B':'#2ECC71'}
                   strokeWidth="9"
@@ -902,9 +981,9 @@ function BudgetScreen({ accounts }) {
                 const pct = Math.min((b.spent||0)/(b.budget_amount||1)*100, 100);
                 const over = pct>=100, warn = pct>=75;
                 const bClr = over?'#EF4444':warn?'#F59E0B':'#2ECC71';
-                const pal  = palette(b.id||b.name);
+                const pal  = palette(b.id||b.name, lm);
                 return (
-                  <div key={b.id} style={{ background:'#1A1A1D', borderRadius:18, padding:'16px 18px', marginBottom:10, border:`1px solid rgba(255,255,255,0.07)`, animation:`fadeUp 180ms ${i*50}ms ease both` }}>
+                  <div key={b.id} style={{ background:'var(--bg2)', borderRadius:18, padding:'16px 18px', marginBottom:10, border:`1px solid var(--border)`, animation:`fadeUp 180ms ${i*50}ms ease both` }}>
                     <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
                       <div style={{ width:44, height:44, borderRadius:12, background:pal.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0 }}>
                         {b.icon||'💰'}
@@ -915,7 +994,7 @@ function BudgetScreen({ accounts }) {
                       </div>
                       <div style={{ fontSize:13, fontWeight:800, color:over?'#EF4444':T1 }}>{Math.round(pct)}%</div>
                     </div>
-                    <div style={{ background:'rgba(255,255,255,0.08)', borderRadius:99, height:5 }}>
+                    <div style={{ background:'var(--border2)', borderRadius:99, height:5 }}>
                       <div style={{ height:'100%', borderRadius:99, width:`${pct}%`, background:bClr, transition:'width 0.6s ease' }}/>
                     </div>
                   </div>
@@ -937,7 +1016,7 @@ function SettingScreen() {
         <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:24 }}>Settings</h1>
       </div>
       {[['Manage Accounts','/accounts'],['Manage Categories','/categories'],['Budgets','/budgets'],['Recurring Rules','/recurring']].map(([l,h]) => (
-        <a key={l} href={h} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', background:'#1A1A1D', borderBottom:`1px solid rgba(255,255,255,0.06)`, textDecoration:'none' }}>
+        <a key={l} href={h} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', background:'var(--bg2)', borderBottom:`1px solid var(--border)`, textDecoration:'none' }}>
           <span style={{ fontSize:15, fontWeight:600, color:T1 }}>{l}</span>
           <IChevR s={16} c={T3}/>
         </a>
@@ -961,7 +1040,7 @@ function BottomNav({ active, setActive }) {
     <div style={{
       position:'absolute', bottom:0, left:0, right:0,
       background:NAV_BG,
-      borderTop:`1px solid rgba(255,255,255,0.06)`,
+      borderTop:`1px solid var(--border)`,
       display:'flex', padding:'8px 4px 20px',
       zIndex:50,
     }}>
@@ -979,9 +1058,9 @@ function BottomNav({ active, setActive }) {
               display:'flex', alignItems:'center', justifyContent:'center',
               transition:'background 200ms',
             }}>
-              <Ico s={19} c={on ? '#8B7CF8' : 'rgba(255,255,255,0.28)'} w={on ? 2.2 : 1.7}/>
+              <Ico s={19} c={on ? '#8B7CF8' : T3} w={on ? 2.2 : 1.7}/>
             </div>
-            <span style={{ fontSize:9, fontWeight:700, color:on?'#8B7CF8':'rgba(255,255,255,0.28)', letterSpacing:0.3 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:on?'#8B7CF8':T3, letterSpacing:0.3 }}>
               {label}
             </span>
           </button>
@@ -995,29 +1074,43 @@ function BottomNav({ active, setActive }) {
    APP ROOT
    ════════════════════════════════════════════════════════════════════════ */
 function App() {
-  const [screen,   setScreen]   = useState('home');
-  const [accounts, setAccounts] = useState([]);
-  const [tick,     setTick]     = useState(0);
+  const [screen,    setScreen]    = useState('home');
+  const [accounts,  setAccounts]  = useState([]);
+  const [tick,      setTick]      = useState(0);
+  const [lightMode, setLightMode] = useState(() => localStorage.getItem('theme') === 'light');
 
   useEffect(() => {
     fetch('/api/accounts').then(r=>r.json()).then(d=>setAccounts(Array.isArray(d)?d:[])).catch(()=>{});
   }, [tick]);
 
-  return (
-    <div style={{
-      width:390, height:844,
-      borderRadius:44, overflow:'hidden',
-      boxShadow:'0 40px 100px rgba(0,0,0,0.7)',
-      position:'relative', background:APP_BG,
-    }}>
-      {screen === 'home'     && <HomeScreen accounts={accounts} onAccountChange={() => setTick(t=>t+1)}/>}
-      {screen === 'accounts' && <AccountScreen accounts={accounts}/>}
-      {screen === 'txns'     && <TxnsScreen accounts={accounts}/>}
-      {screen === 'budget'   && <BudgetScreen accounts={accounts}/>}
-      {screen === 'settings' && <SettingScreen/>}
+  const toggleTheme = () => {
+    setLightMode(lm => {
+      const next = !lm;
+      localStorage.setItem('theme', next ? 'light' : 'dark');
+      return next;
+    });
+  };
 
-      <BottomNav active={screen} setActive={setScreen}/>
-    </div>
+  return (
+    <ThemeCtx.Provider value={lightMode}>
+      <div
+        data-theme={lightMode ? 'light' : 'dark'}
+        style={{
+          width:390, height:844,
+          borderRadius:44, overflow:'hidden',
+          boxShadow:'0 40px 100px rgba(0,0,0,0.7)',
+          position:'relative', background:APP_BG,
+        }}
+      >
+        {screen === 'home'     && <HomeScreen accounts={accounts} onAccountChange={() => setTick(t=>t+1)} onToggleTheme={toggleTheme}/>}
+        {screen === 'accounts' && <AccountScreen accounts={accounts}/>}
+        {screen === 'txns'     && <TxnsScreen accounts={accounts}/>}
+        {screen === 'budget'   && <BudgetScreen accounts={accounts}/>}
+        {screen === 'settings' && <SettingScreen/>}
+
+        <BottomNav active={screen} setActive={setScreen}/>
+      </div>
+    </ThemeCtx.Provider>
   );
 }
 
