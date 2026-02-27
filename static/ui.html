@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>Budget</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0A0A0A;
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #root {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; width: 100%; padding: 24px 0;
+    }
+
+    @keyframes blink    { 0%,100%{opacity:1} 50%{opacity:0} }
+    @keyframes fadeUp   { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes dropIn  { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes modalUp  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+    ::-webkit-scrollbar { display: none; }
+
+    input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.6; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+/* ── Colours ────────────────────────────────────────────────────────────── */
+const APP_BG    = '#151515';
+const NAV_BG    = '#222222';
+const CARD_BORDER = 'rgba(255,255,255,0.07)';
+const T1 = '#FFFFFF';
+const T2 = 'rgba(255,255,255,0.55)';
+const T3 = 'rgba(255,255,255,0.35)';
+
+/* 10 dark-muted card backgrounds + matching bright icon-circle colour */
+const PALETTES = [
+  { bg:'#1C3828', cc:'#2ECC71' },
+  { bg:'#3A1818', cc:'#E74C3C' },
+  { bg:'#192A3C', cc:'#3498DB' },
+  { bg:'#2C1A08', cc:'#E67E22' },
+  { bg:'#282D14', cc:'#ADDB45' },
+  { bg:'#122B2B', cc:'#1ABC9C' },
+  { bg:'#2C2C14', cc:'#F1C40F' },
+  { bg:'#1C1630', cc:'#9B59B6' },
+  { bg:'#2E1C14', cc:'#D35400' },
+  { bg:'#142C1E', cc:'#16A085' },
+];
+
+function palette(str) {
+  let h = 0;
+  for (let i = 0; i < (str||'').length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; }
+  return PALETTES[Math.abs(h) % PALETTES.length];
+}
+
+/* ── Currency formatting ────────────────────────────────────────────────── */
+function fmtAmt(n, currency = 'USD') {
+  const v = parseFloat(n || 0);
+  if (currency === 'UZS') {
+    return 'UZS\u00A0' + Math.round(v).toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+  }
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* ── Period helpers ─────────────────────────────────────────────────────── */
+function periodLabel(p) {
+  if (!p || p === 'all') return 'All';
+  try {
+    const [y, m] = p.split('-');
+    return new Date(+y, +m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  } catch { return p; }
+}
+function prevPeriod(p) {
+  if (!p || p === 'all') return 'all';
+  const [y, m] = p.split('-').map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function nextPeriod(p) {
+  if (!p || p === 'all') return 'all';
+  const [y, m] = p.split('-').map(Number);
+  const d = new Date(y, m, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function currentYM() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
+}
+
+/* ── SVG icon helper ────────────────────────────────────────────────────── */
+const I = ({ s=20, c='currentColor', w=1.8, children, ...p }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"
+       stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" {...p}>
+    {children}
+  </svg>
+);
+const IHome  = p => <I {...p}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></I>;
+const IAcct  = p => <I {...p}><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></I>;
+const ITxns  = p => <I {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/></I>;
+const IBudg  = p => <I {...p}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></I>;
+const ISet   = p => <I {...p}><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></I>;
+const IChev  = p => <I {...p}><polyline points="6 9 12 15 18 9"/></I>;
+const IChevR = p => <I {...p}><polyline points="9 18 15 12 9 6"/></I>;
+const IChevL = p => <I {...p}><polyline points="15 18 9 12 15 6"/></I>;
+const IPlus  = p => <I {...p} w={2.5}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></I>;
+const IClose = p => <I {...p} w={2.5}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></I>;
+const IEdit  = p => <I {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></I>;
+const IDel   = p => <I {...p}><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></I>;
+const IEnter = p => <I {...p} w={2.5}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></I>;
+const ICal   = p => <I {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></I>;
+const INote  = p => <I {...p}><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></I>;
+const IDown  = p => <I {...p}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></I>;
+const IUp    = p => <I {...p}><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></I>;
+const ITrash = p => <I {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></I>;
+
+/* ════════════════════════════════════════════════════════════════════════
+   HOME SCREEN — category grid
+   ════════════════════════════════════════════════════════════════════════ */
+function HomeScreen({ accounts, currency, onAccountChange }) {
+  const [period,     setPeriod]     = useState('all');
+  const [showDrop,   setShowDrop]   = useState(false);
+  const [editMode,   setEditMode]   = useState(false);
+  const [homeData,   setHomeData]   = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [selAccId,   setSelAccId]   = useState('');
+  const [addCatOpen, setAddCatOpen] = useState(false);
+  const [addCatType, setAddCatType] = useState('expense');
+  const [addTxnCat,  setAddTxnCat]  = useState(null);   // category card tapped
+
+  const selAcc = accounts.find(a => a.id === selAccId) || accounts[0];
+  const cur    = selAcc?.currency || 'USD';
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ p: period });
+    if (selAccId) params.set('account_id', selAccId);
+    fetch('/api/home?' + params)
+      .then(r => r.json())
+      .then(d => { setHomeData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [period, selAccId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDeleteCat = async (id) => {
+    if (!confirm('Delete this category and all its transactions?')) return;
+    await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    load();
+  };
+
+  const pickLedger = (id) => {
+    setSelAccId(id);
+    setShowDrop(false);
+    onAccountChange?.(id);
+  };
+
+  const navPrev = () => setPeriod(p => p === 'all' ? currentYM() : prevPeriod(p));
+  const navNext = () => {
+    const nx = period === 'all' ? currentYM() : nextPeriod(period);
+    if (nx > currentYM()) { setPeriod('all'); return; }
+    setPeriod(nx);
+  };
+
+  const exp = homeData?.expense_cats || [];
+  const inc = homeData?.income_cats  || [];
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', background:APP_BG, position:'relative' }}>
+
+      {/* ── TOP BAR ─────────────────────────────────────────────────────── */}
+      <div style={{ padding:'48px 16px 10px', display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+        {/* ledger selector */}
+        <button onClick={() => setShowDrop(v => !v)} style={{
+          flex:1, background:'none', border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', gap:5, minWidth:0,
+        }}>
+          <span style={{ fontSize:13, fontWeight:700, color:'#7B8CDE', letterSpacing:0.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130 }}>
+            {selAcc?.name?.toUpperCase() || 'ALL ACCOUNTS'}
+          </span>
+          <IChev s={14} c="#7B8CDE" w={2.5}/>
+        </button>
+
+        {/* period navigation */}
+        <div style={{ display:'flex', alignItems:'center', gap:0 }}>
+          <button onClick={navPrev} style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 6px', display:'flex', alignItems:'center' }}>
+            <IChevL s={16} c={T2} w={2}/>
+          </button>
+          <span style={{ fontSize:13, fontWeight:600, color:T1, minWidth:50, textAlign:'center', letterSpacing:0.2 }}>
+            {periodLabel(period)}
+          </span>
+          <button onClick={navNext} style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 6px', display:'flex', alignItems:'center' }}>
+            <IChevR s={16} c={T2} w={2}/>
+          </button>
+        </div>
+
+        {/* avatar / edit toggle */}
+        <button onClick={() => setEditMode(e => !e)} style={{
+          width:34, height:34, borderRadius:'50%',
+          background: editMode ? '#5B4DD3' : '#2A2A2E',
+          border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+          transition:'background 200ms',
+        }}>
+          {editMode ? <IClose s={14} c="white"/> : <IEdit s={14} c={T2}/>}
+        </button>
+      </div>
+
+      {/* ── SCROLL AREA ─────────────────────────────────────────────────── */}
+      <div style={{ flex:1, overflowY:'auto', padding:'0 0 8px' }}>
+
+        {loading
+          ? <div style={{ textAlign:'center', color:T3, padding:'60px 0', fontSize:14 }}>Loading…</div>
+          : <>
+              <Section
+                label="Expense"
+                total={homeData?.expense_total || 0}
+                currency={cur}
+                cats={exp}
+                editMode={editMode}
+                onDelete={handleDeleteCat}
+                onAdd={() => { setAddCatType('expense'); setAddCatOpen(true); }}
+                onCardTap={cat => setAddTxnCat({ ...cat, cur })}
+              />
+              <Section
+                label="Income"
+                total={homeData?.income_total || 0}
+                currency={cur}
+                cats={inc}
+                editMode={editMode}
+                onDelete={handleDeleteCat}
+                onAdd={() => { setAddCatType('income'); setAddCatOpen(true); }}
+                onCardTap={cat => setAddTxnCat({ ...cat, cur })}
+              />
+            </>
+        }
+
+        {/* AI Log footer */}
+        <div style={{ display:'flex', justifyContent:'center', padding:'20px 0 100px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, background:'#1E1E22', borderRadius:50, padding:'9px 20px', cursor:'pointer' }}>
+            <span style={{ fontSize:16 }}>⚙️</span>
+            <span style={{ fontSize:13, fontWeight:600, color:T2, letterSpacing:0.3 }}>AI Log</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── LEDGER DROPDOWN ──────────────────────────────────────────────── */}
+      {showDrop && (
+        <div style={{
+          position:'absolute', top:96, left:12, right:12, zIndex:200,
+          background:'#1E1E22', borderRadius:18,
+          boxShadow:'0 16px 48px rgba(0,0,0,0.7)',
+          animation:'dropIn 180ms ease both',
+          overflow:'hidden',
+          border:`1px solid rgba(255,255,255,0.08)`,
+        }}>
+          <div style={{ padding:'14px 18px 8px' }}>
+            <span style={{ fontSize:11, fontWeight:700, color:T3, letterSpacing:1.2, textTransform:'uppercase' }}>Select Ledger</span>
+          </div>
+          {[{ id:'', name:'All Accounts', currency:'' }, ...accounts].map((a, i) => {
+            const pal  = palette(a.name);
+            const isActive = (selAccId === a.id) || (!selAccId && !a.id);
+            return (
+              <div key={a.id || 'all'} onClick={() => pickLedger(a.id)} style={{
+                display:'flex', alignItems:'center', gap:14, padding:'12px 18px',
+                cursor:'pointer', background:'transparent',
+                borderLeft: isActive ? '3px solid #2ECC71' : '3px solid transparent',
+                transition:'background 120ms',
+              }}
+                onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background='transparent'}
+              >
+                <div style={{
+                  width:36, height:36, borderRadius:10,
+                  background: a.id ? pal.bg : '#252528',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:16, flexShrink:0, border:`1px solid rgba(255,255,255,0.08)`,
+                }}>
+                  {a.id ? <span style={{ color:pal.cc, fontSize:17 }}>$</span> : <span style={{ fontSize:17 }}>🏦</span>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color: isActive ? '#2ECC71' : T1 }}>{a.name || 'All Accounts'}</div>
+                  {a.currency && <div style={{ fontSize:11, color:T3, marginTop:1 }}>{a.currency}</div>}
+                </div>
+                {isActive && <div style={{ width:7, height:7, borderRadius:'50%', background:'#2ECC71', flexShrink:0 }}/>}
+              </div>
+            );
+          })}
+          <div style={{ height:8 }}/>
+        </div>
+      )}
+
+      {/* ── backdrop to close dropdown ───────────────────────────────────── */}
+      {showDrop && (
+        <div onClick={() => setShowDrop(false)}
+          style={{ position:'absolute', inset:0, zIndex:199, background:'rgba(0,0,0,0.4)' }}/>
+      )}
+
+      {/* ── ADD CATEGORY MODAL ────────────────────────────────────────────── */}
+      {addCatOpen && (
+        <AddCategoryModal
+          type={addCatType}
+          onClose={() => setAddCatOpen(false)}
+          onSuccess={() => { setAddCatOpen(false); load(); }}
+        />
+      )}
+
+      {/* ── ADD TRANSACTION MODAL (tapping a card) ────────────────────────── */}
+      {addTxnCat && (
+        <AddTxnModal
+          accounts={accounts}
+          preCategory={addTxnCat}
+          onClose={() => setAddTxnCat(null)}
+          onSuccess={() => { setAddTxnCat(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Section (Expense / Income) ─────────────────────────────────────────── */
+function Section({ label, total, currency, cats, editMode, onDelete, onAdd, onCardTap }) {
+  const isExpense = label === 'Expense';
+
+  return (
+    <div style={{ marginBottom:10 }}>
+      {/* section header */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px 10px' }}>
+        <span style={{ fontSize:14, fontWeight:500, color:T2 }}>{label}</span>
+        <span style={{ fontSize:17, fontWeight:800, color:T1, letterSpacing:'-0.5px', flex:1 }}>
+          {fmtAmt(total, currency)}
+        </span>
+        <div style={{
+          width:26, height:26, borderRadius:8,
+          background:'#2A2A2E',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer',
+        }}>
+          {isExpense ? <IDown s={13} c={T2}/> : <IUp s={13} c={T2}/>}
+        </div>
+      </div>
+
+      {/* 3-column grid */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, padding:'0 12px' }}>
+        {cats.map(cat => (
+          <CategoryCard key={cat.id} cat={cat} currency={currency}
+            editMode={editMode} onDelete={() => onDelete(cat.id)} onTap={() => onCardTap(cat)}/>
+        ))}
+        {/* add card — always show in edit mode, also show when list is empty */}
+        {(editMode || cats.length === 0) && (
+          <div onClick={onAdd} style={{
+            borderRadius:14, border:'1.5px dashed rgba(255,255,255,0.18)',
+            minHeight:148, display:'flex', alignItems:'center', justifyContent:'center',
+            cursor:'pointer', flexDirection:'column', gap:8,
+          }}>
+            <div style={{ width:48, height:48, borderRadius:'50%', background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <IPlus s={22} c={T3}/>
+            </div>
+            <span style={{ fontSize:12, color:T3, fontWeight:600 }}>Add</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Category Card ──────────────────────────────────────────────────────── */
+function CategoryCard({ cat, currency, editMode, onDelete, onTap }) {
+  const [pressed, setPressed] = useState(false);
+  const pal = palette(cat.id || cat.name);
+  const pct = cat.budget_amount ? Math.min(cat.total / cat.budget_amount, 1) : 0;
+  const hasBudget = !!cat.budget_amount;
+
+  return (
+    <div
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => { setPressed(false); if (!editMode) onTap?.(); }}
+      onMouseLeave={() => setPressed(false)}
+      onTouchStart={() => setPressed(true)}
+      onTouchEnd={e => { e.preventDefault(); setPressed(false); if (!editMode) onTap?.(); }}
+      style={{
+        borderRadius:14,
+        background: pal.bg,
+        border:`1px solid ${CARD_BORDER}`,
+        minHeight:148,
+        display:'flex', flexDirection:'column',
+        overflow:'hidden',
+        position:'relative',
+        cursor: editMode ? 'default' : 'pointer',
+        transform: pressed && !editMode ? 'scale(0.96)' : 'scale(1)',
+        transition:'transform 80ms ease',
+        animation:'fadeUp 220ms ease both',
+      }}
+    >
+      {/* category name */}
+      <div style={{ padding:'11px 10px 0', fontSize:12, fontWeight:600, color:T1, lineHeight:1.3, minHeight:38 }}>
+        {cat.name}
+      </div>
+
+      {/* icon circle — centred in remaining space */}
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'6px 0' }}>
+        <div style={{
+          width:56, height:56, borderRadius:'50%',
+          background: pal.cc + '22',
+          border:`2px solid ${pal.cc}55`,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize: /\p{Emoji}/u.test(cat.icon||'') ? 26 : 20,
+        }}>
+          <span style={{ color: pal.cc }}>{cat.icon || '💰'}</span>
+        </div>
+      </div>
+
+      {/* amount */}
+      <div style={{ padding:'0 10px 10px', fontSize:12, fontWeight:800, color:T1, letterSpacing:'-0.3px', lineHeight:1.3, wordBreak:'break-all' }}>
+        {fmtAmt(cat.total, currency)}
+      </div>
+
+      {/* budget progress strip at very bottom */}
+      {hasBudget && (
+        <div style={{ height:3, background:'rgba(255,255,255,0.08)' }}>
+          <div style={{
+            height:'100%',
+            width:`${pct * 100}%`,
+            background: pct >= 1 ? '#EF4444' : pct >= 0.75 ? '#F59E0B' : '#2ECC71',
+            transition:'width 0.5s ease',
+          }}/>
+        </div>
+      )}
+
+      {/* ── Edit mode overlays ─────────────────────────────────────────── */}
+      {editMode && (
+        <>
+          {/* red × badge */}
+          <button onClick={onDelete} style={{
+            position:'absolute', top:6, left:6,
+            width:22, height:22, borderRadius:'50%',
+            background:'#E74C3C', border:'none', cursor:'pointer',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            zIndex:10,
+          }}>
+            <IClose s={11} c="white" w={3}/>
+          </button>
+          {/* Edit button */}
+          <div style={{
+            position:'absolute', bottom:0, left:0, right:0,
+            background:'rgba(0,0,0,0.55)', backdropFilter:'blur(4px)',
+            padding:'7px 0', textAlign:'center',
+            cursor:'pointer',
+          }}>
+            <span style={{ fontSize:12, fontWeight:700, color:'#7B8CDE', letterSpacing:0.3 }}>Edit</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ADD CATEGORY MODAL
+   ════════════════════════════════════════════════════════════════════════ */
+const ICON_OPTIONS = ['💰','🏠','🥑','💡','🚗','🛍','🎬','💊','📚','💼','💻','📈','🐱','🏋️','✈️','🍕','💈','🏗️','💎','📱'];
+
+function AddCategoryModal({ type, onClose, onSuccess }) {
+  const [name,   setName]   = useState('');
+  const [icon,   setIcon]   = useState('💰');
+  const [busy,   setBusy]   = useState(false);
+  const [on,     setOn]     = useState(false);
+  useEffect(() => { setTimeout(() => setOn(true), 10); }, []);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await fetch('/api/categories', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name: name.trim(), type, icon }),
+      });
+      onSuccess();
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <ModalShell on={on} onClose={onClose} title={`New ${type.charAt(0).toUpperCase()+type.slice(1)} Category`}>
+      <div style={{ padding:'0 20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+        {/* name */}
+        <div>
+          <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:6 }}>NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Marketing"
+            style={{ width:'100%', background:'#252528', border:`1px solid rgba(255,255,255,0.12)`, borderRadius:12, padding:'12px 14px', color:T1, fontSize:14, fontWeight:500, fontFamily:'inherit', outline:'none' }}/>
+        </div>
+        {/* icon picker */}
+        <div>
+          <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:8 }}>ICON</label>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {ICON_OPTIONS.map(ic => (
+              <button key={ic} onClick={() => setIcon(ic)} style={{
+                width:42, height:42, borderRadius:12, border:'none', cursor:'pointer',
+                background: icon === ic ? '#5B4DD3' : '#252528',
+                fontSize:20,
+                transition:'background 120ms',
+              }}>{ic}</button>
+            ))}
+          </div>
+        </div>
+        {/* submit */}
+        <button onClick={submit} disabled={!name.trim() || busy} style={{
+          padding:'14px 0', borderRadius:14, border:'none', cursor: !name.trim()||busy ? 'not-allowed' : 'pointer',
+          background: !name.trim()||busy ? '#2A2A2E' : '#5B4DD3',
+          color:T1, fontSize:15, fontWeight:700, fontFamily:'inherit',
+          transition:'background 150ms',
+        }}>
+          {busy ? 'Saving…' : 'Create Category'}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ADD TRANSACTION MODAL (opened by tapping a category card)
+   ════════════════════════════════════════════════════════════════════════ */
+function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
+  const [on,     setOn]    = useState(false);
+  const [amt,    setAmt]   = useState('0');
+  const [accId,  setAccId] = useState(accounts[0]?.id || '');
+  const [date,   setDate]  = useState(new Date().toISOString().slice(0,10));
+  const [note,   setNote]  = useState('');
+  const [busy,   setBusy]  = useState(false);
+  useEffect(() => { setTimeout(() => setOn(true), 10); }, []);
+
+  const selAcc = accounts.find(a => a.id === accId);
+  const pal    = palette(preCategory.id || preCategory.name);
+  const isExp  = preCategory.type === 'expense';
+  const accentC = isExp ? '#E74C3C' : '#2ECC71';
+
+  const key = k => {
+    if (k === '⌫') { setAmt(p => p.length <= 1 ? '0' : p.slice(0,-1)); return; }
+    if (k === '.') { setAmt(p => p.includes('.') ? p : p + '.'); return; }
+    setAmt(p => {
+      if (p === '0') return k;
+      if (p.split('.')[1]?.length >= 2) return p;
+      if (p.replace('.','').length >= 9) return p;
+      return p + k;
+    });
+  };
+
+  const submit = async () => {
+    const a = parseFloat(amt);
+    if (!a || !accId) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/transactions', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ type:preCategory.type, amount:a, account_id:accId, category_id:preCategory.id, date, note:note||null }),
+      });
+      if (r.ok) onSuccess();
+    } finally { setBusy(false); }
+  };
+
+  const display = (() => {
+    const [i, d] = amt.split('.');
+    const fi = parseInt(i||'0',10).toLocaleString('en-US');
+    return d === undefined ? fi : `${fi}.${d}`;
+  })();
+
+  const dtLabel = (() => {
+    try { return new Date(date+'T00:00:00').toLocaleDateString('en-US',{day:'numeric',month:'long',year:'numeric'}); }
+    catch { return date; }
+  })();
+
+  return (
+    <ModalShell on={on} onClose={onClose} title="">
+      {/* category identity */}
+      <div style={{ display:'flex', alignItems:'center', gap:14, padding:'0 20px 16px' }}>
+        <div style={{ width:52, height:52, borderRadius:14, background:pal.bg, border:`1px solid ${CARD_BORDER}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, flexShrink:0 }}>
+          {preCategory.icon || '💰'}
+        </div>
+        <div>
+          <div style={{ fontSize:17, fontWeight:800, color:T1 }}>{preCategory.name}</div>
+          <div style={{ fontSize:12, color:T3, marginTop:2 }}>
+            {isExp ? 'Expense' : 'Income'} · {selAcc?.currency || 'USD'}
+          </div>
+        </div>
+      </div>
+
+      {/* amount */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'0 24px 14px', gap:6 }}>
+        <span style={{ fontSize:40, fontWeight:800, color:T1, letterSpacing:'-2px' }}>{display}</span>
+        <span style={{ width:3, height:38, background:accentC, borderRadius:2, animation:'blink 1s step-end infinite' }}/>
+      </div>
+
+      {/* form rows */}
+      <div style={{ margin:'0 16px', background:'#1E1E22', borderRadius:16, overflow:'hidden', border:`1px solid rgba(255,255,255,0.08)` }}>
+        {/* account */}
+        <TRow icon={<span style={{fontSize:16}}>🏦</span>} label={selAcc?`${selAcc.name} · ${selAcc.currency}`:'Account'}>
+          <select value={accId} onChange={e => setAccId(e.target.value)}
+            style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%'}}>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+          </select>
+        </TRow>
+        {/* date */}
+        <TRow icon={<ICal s={15} c={T2}/>} label={dtLabel}>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%'}}/>
+        </TRow>
+        {/* note */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px' }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <INote s={14} c={T2}/>
+          </div>
+          <input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Add a note…"
+            style={{flex:1,background:'none',border:'none',outline:'none',fontSize:14,fontWeight:500,fontFamily:'inherit',color:T1}}/>
+        </div>
+      </div>
+
+      {/* numpad */}
+      <div style={{ display:'flex', gap:8, flex:1, padding:'10px 16px 20px', minHeight:0 }}>
+        <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gridTemplateRows:'repeat(4,1fr)', gap:7 }}>
+          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+            <NK key={k} accent={accentC} onP={() => key(k)}>
+              {k === '⌫' ? <IDel s={16} c={T1}/> : k}
+            </NK>
+          ))}
+        </div>
+        <CK accent={accentC} onP={submit} busy={busy}/>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ── Form row ───────────────────────────────────────────────────────────── */
+function TRow({ icon, label, children }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:`1px solid rgba(255,255,255,0.07)`, position:'relative' }}>
+      <div style={{ width:32, height:32, borderRadius:8, background:'rgba(255,255,255,0.08)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        {icon}
+      </div>
+      <span style={{ flex:1, fontSize:14, fontWeight:500, color:T1 }}>{label}</span>
+      <IChevR s={14} c={T3}/>
+      {children}
+    </div>
+  );
+}
+
+/* ── Modal shell ────────────────────────────────────────────────────────── */
+function ModalShell({ on, onClose, title, children }) {
+  return (
+    <div style={{
+      position:'absolute', inset:0, zIndex:300,
+      display:'flex', flexDirection:'column',
+      background:'#191919',
+      borderRadius:'24px 24px 0 0',
+      transform: on ? 'translateY(0)' : 'translateY(100%)',
+      transition:'transform 300ms cubic-bezier(0.34,1.56,0.64,1)',
+    }}>
+      {/* drag handle */}
+      <div style={{ display:'flex', justifyContent:'center', paddingTop:12 }}>
+        <div style={{ width:36, height:4, borderRadius:2, background:'rgba(255,255,255,0.15)' }}/>
+      </div>
+      {/* header */}
+      <div style={{ display:'flex', alignItems:'center', padding:'10px 20px 14px' }}>
+        <button onClick={onClose} style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,0.08)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <IClose s={14} c={T2}/>
+        </button>
+        {title && <div style={{ flex:1, textAlign:'center', fontSize:16, fontWeight:700, color:T1, marginRight:34 }}>{title}</div>}
+        {!title && <div style={{ flex:1 }}/>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ── Numpad key ─────────────────────────────────────────────────────────── */
+function NK({ children, onP, accent }) {
+  const [p, sp] = useState(false);
+  return (
+    <div
+      onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); onP?.(); }} onMouseLeave={() => sp(false)}
+      onTouchStart={() => sp(true)} onTouchEnd={e => { e.preventDefault(); sp(false); onP?.(); }}
+      style={{
+        background: p ? accent + '22' : '#222226',
+        borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center',
+        cursor:'pointer', fontSize:20, fontWeight:700, color:T1, userSelect:'none',
+        transform: p ? 'scale(0.91)' : 'scale(1)',
+        transition:'transform 65ms, background 65ms',
+        border:`1px solid rgba(255,255,255,0.06)`,
+      }}
+    >{children}</div>
+  );
+}
+
+/* ── Confirm key ────────────────────────────────────────────────────────── */
+function CK({ onP, busy, accent }) {
+  const [p, sp] = useState(false);
+  return (
+    <div
+      onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); if (!busy) onP?.(); }} onMouseLeave={() => sp(false)}
+      onTouchStart={() => sp(true)} onTouchEnd={e => { e.preventDefault(); sp(false); if (!busy) onP?.(); }}
+      style={{
+        width:60, background: p ? accent + 'BB' : accent,
+        borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center',
+        cursor: busy ? 'not-allowed' : 'pointer',
+        transform: p ? 'scale(0.93)' : 'scale(1)',
+        transition:'transform 65ms, background 65ms',
+        boxShadow:`0 6px 20px ${accent}44`,
+        flexShrink:0,
+      }}
+    ><IEnter s={24} c="white"/></div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TRANSACTIONS SCREEN
+   ════════════════════════════════════════════════════════════════════════ */
+function TxnsScreen({ accounts }) {
+  const [txns,    setTxns]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter,  setFilter]  = useState('all');
+
+  useEffect(() => {
+    fetch('/api/transactions?p=month')
+      .then(r => r.json()).then(d => { setTxns(Array.isArray(d)?d:[]); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const shown = txns.filter(t => filter === 'all' || t.type === filter);
+  const cur   = accounts[0]?.currency || 'USD';
+
+  return (
+    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
+      <div style={{ padding:'52px 18px 0' }}>
+        <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:18 }}>Transactions</h1>
+        <div style={{ display:'flex', gap:7, overflowX:'auto', paddingBottom:4, scrollbarWidth:'none' }}>
+          {[['all','All'],['expense','Expenses'],['income','Income'],['transfer','Transfers']].map(([v,l]) => (
+            <button key={v} onClick={() => setFilter(v)} style={{
+              padding:'7px 16px', borderRadius:50, border:'none', cursor:'pointer',
+              fontFamily:'inherit', fontSize:13, fontWeight:600, flexShrink:0,
+              background: filter === v ? '#5B4DD3' : '#1E1E22',
+              color: filter === v ? T1 : T2,
+              transition:'all 160ms',
+            }}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding:'14px 12px 120px' }}>
+        {loading
+          ? <p style={{ textAlign:'center', color:T3, padding:'50px 0' }}>Loading…</p>
+          : shown.length === 0
+            ? <div style={{ textAlign:'center', padding:'60px 0' }}>
+                <div style={{ fontSize:40, marginBottom:10 }}>📭</div>
+                <div style={{ fontWeight:700, color:T2 }}>Nothing here</div>
+              </div>
+            : shown.map((t, i) => <TxnRow key={t.id} t={t} i={i} currency={cur}/>)
+        }
+      </div>
+    </div>
+  );
+}
+
+function TxnRow({ t, i, currency }) {
+  const [vis, setVis] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setVis(true), i*50); return () => clearTimeout(id); }, [i]);
+  const isExp = t.type==='expense', isInc = t.type==='income';
+  const pal   = palette(t.category_id || t.cat_name || t.type);
+  const dt    = t.date ? new Date(t.date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:12, padding:'11px 12px',
+      borderRadius:14, marginBottom:5,
+      background:'#1A1A1D',
+      opacity:vis?1:0, transform:vis?'translateY(0)':'translateY(6px)',
+      transition:'opacity 180ms, transform 180ms',
+    }}>
+      <div style={{ width:42, height:42, borderRadius:12, background:pal.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0, border:`1px solid ${CARD_BORDER}` }}>
+        {t.cat_icon||'💸'}
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:T1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {t.cat_name||t.note||t.type}
+        </div>
+        <div style={{ fontSize:11, color:T3, marginTop:2 }}>{dt}{t.acct_name?` · ${t.acct_name}`:''}</div>
+      </div>
+      <div style={{ fontSize:14, fontWeight:800, color:isExp?'#E74C3C':isInc?'#2ECC71':'#9B59B6', whiteSpace:'nowrap' }}>
+        {isExp?'−':isInc?'+':''}${parseFloat(t.amount||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ACCOUNT SCREEN
+   ════════════════════════════════════════════════════════════════════════ */
+function AccountScreen({ accounts }) {
+  const total = accounts.reduce((s,a) => s + (a.balance||0), 0);
+  const cur   = accounts[0]?.currency || 'USD';
+  return (
+    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
+      <div style={{ padding:'52px 18px 0' }}>
+        <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:4 }}>Accounts</h1>
+        <p style={{ fontSize:13, color:T3, marginBottom:24 }}>Total: {fmtAmt(total, cur)}</p>
+      </div>
+      <div style={{ padding:'0 12px 120px' }}>
+        {accounts.length === 0
+          ? <div style={{ textAlign:'center', padding:'60px 0' }}>
+              <div style={{ fontSize:40, marginBottom:10 }}>🏦</div>
+              <div style={{ fontWeight:700, color:T2 }}>No accounts yet</div>
+            </div>
+          : accounts.map((a, i) => {
+              const pal = palette(a.id || a.name);
+              return (
+                <div key={a.id} style={{
+                  background:'#1A1A1D', borderRadius:18, padding:'16px 18px', marginBottom:10,
+                  border:`1px solid rgba(255,255,255,0.07)`,
+                  animation:`fadeUp 180ms ${i*50}ms ease both`,
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+                    <div style={{ width:48, height:48, borderRadius:14, background:pal.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0, border:`1px solid ${CARD_BORDER}` }}>
+                      <span style={{ color:pal.cc, fontSize:20, fontWeight:800 }}>$</span>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:16, fontWeight:700, color:T1 }}>{a.name}</div>
+                      <div style={{ fontSize:12, color:T3, marginTop:2 }}>{a.currency}</div>
+                    </div>
+                    <div style={{ fontSize:16, fontWeight:800, color:T1, textAlign:'right' }}>
+                      {fmtAmt(a.balance, a.currency)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+        }
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BUDGET SCREEN
+   ════════════════════════════════════════════════════════════════════════ */
+function BudgetScreen({ accounts }) {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoad]  = useState(true);
+  const cur = accounts[0]?.currency || 'USD';
+  useEffect(() => {
+    fetch('/api/budgets').then(r=>r.json()).then(d=>{setItems(d);setLoad(false);}).catch(()=>setLoad(false));
+  }, []);
+  const wb = items.filter(b => b.budget_amount);
+  const totB = wb.reduce((s,b)=>s+(b.budget_amount||0),0);
+  const totS = wb.reduce((s,b)=>s+(b.spent||0),0);
+  const op   = totB ? Math.min(totS/totB*100, 100) : 0;
+  const R    = 34; const circ = 2*Math.PI*R;
+  return (
+    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
+      <div style={{ padding:'52px 18px 0' }}>
+        <h1 style={{ fontSize:26, fontWeight:800, color:T1 }}>Budget</h1>
+        <p style={{ fontSize:13, color:T3, marginBottom:20 }}>{new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'})}</p>
+        {wb.length > 0 && (
+          <div style={{ background:'#1A1A1D', borderRadius:20, padding:20, marginBottom:20, border:`1px solid rgba(255,255,255,0.07)`, display:'flex', alignItems:'center', gap:20 }}>
+            <div style={{ position:'relative', width:78, height:78, flexShrink:0 }}>
+              <svg width="78" height="78" viewBox="0 0 78 78">
+                <circle cx="39" cy="39" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="9"/>
+                <circle cx="39" cy="39" r={R} fill="none"
+                  stroke={op>=100?'#EF4444':op>=75?'#F59E0B':'#2ECC71'}
+                  strokeWidth="9"
+                  strokeDasharray={`${(op/100)*circ} ${circ}`}
+                  strokeDashoffset={circ*0.25}
+                  strokeLinecap="round"/>
+              </svg>
+              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontSize:13, fontWeight:800, color:T1 }}>{Math.round(op)}%</span>
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize:12, color:T3, fontWeight:500 }}>Total Spent</p>
+              <p style={{ fontSize:22, fontWeight:800, color:T1, letterSpacing:'-1px' }}>{fmtAmt(totS, cur)}</p>
+              <p style={{ fontSize:12, color:T3, marginTop:3 }}>of {fmtAmt(totB, cur)}</p>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{ padding:'0 12px 120px' }}>
+        {loading ? <p style={{ textAlign:'center', color:T3, padding:'50px 0' }}>Loading…</p>
+          : wb.length === 0
+            ? <div style={{ textAlign:'center', padding:'60px 0' }}>
+                <div style={{ fontSize:40, marginBottom:10 }}>📊</div>
+                <div style={{ fontWeight:700, color:T2 }}>No budgets set</div>
+                <div style={{ fontSize:13, color:T3, marginTop:6 }}>Configure budgets in the web interface</div>
+              </div>
+            : wb.map((b, i) => {
+                const pct = Math.min((b.spent||0)/(b.budget_amount||1)*100, 100);
+                const over = pct>=100, warn = pct>=75;
+                const bClr = over?'#EF4444':warn?'#F59E0B':'#2ECC71';
+                const pal  = palette(b.id||b.name);
+                return (
+                  <div key={b.id} style={{ background:'#1A1A1D', borderRadius:18, padding:'16px 18px', marginBottom:10, border:`1px solid rgba(255,255,255,0.07)`, animation:`fadeUp 180ms ${i*50}ms ease both` }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+                      <div style={{ width:44, height:44, borderRadius:12, background:pal.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0 }}>
+                        {b.icon||'💰'}
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:14, color:T1 }}>{b.name}</div>
+                        <div style={{ fontSize:11, color:T3, marginTop:2 }}>{fmtAmt(b.spent,cur)} spent · {fmtAmt(b.budget_amount,cur)}</div>
+                      </div>
+                      <div style={{ fontSize:13, fontWeight:800, color:over?'#EF4444':T1 }}>{Math.round(pct)}%</div>
+                    </div>
+                    <div style={{ background:'rgba(255,255,255,0.08)', borderRadius:99, height:5 }}>
+                      <div style={{ height:'100%', borderRadius:99, width:`${pct}%`, background:bClr, transition:'width 0.6s ease' }}/>
+                    </div>
+                  </div>
+                );
+              })
+        }
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SETTINGS SCREEN
+   ════════════════════════════════════════════════════════════════════════ */
+function SettingScreen() {
+  return (
+    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
+      <div style={{ padding:'52px 18px 0' }}>
+        <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:24 }}>Settings</h1>
+      </div>
+      {[['Manage Accounts','/accounts'],['Manage Categories','/categories'],['Budgets','/budgets'],['Recurring Rules','/recurring']].map(([l,h]) => (
+        <a key={l} href={h} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', background:'#1A1A1D', borderBottom:`1px solid rgba(255,255,255,0.06)`, textDecoration:'none' }}>
+          <span style={{ fontSize:15, fontWeight:600, color:T1 }}>{l}</span>
+          <IChevR s={16} c={T3}/>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BOTTOM NAV
+   ════════════════════════════════════════════════════════════════════════ */
+function BottomNav({ active, setActive }) {
+  const tabs = [
+    { id:'home',     Ico:IHome,  label:'Home' },
+    { id:'accounts', Ico:IAcct,  label:'Account' },
+    { id:'txns',     Ico:ITxns,  label:'Transactions' },
+    { id:'budget',   Ico:IBudg,  label:'Budget' },
+    { id:'settings', Ico:ISet,   label:'Setting' },
+  ];
+  return (
+    <div style={{
+      position:'absolute', bottom:0, left:0, right:0,
+      background:NAV_BG,
+      borderTop:`1px solid rgba(255,255,255,0.06)`,
+      display:'flex', padding:'8px 4px 20px',
+      zIndex:50,
+    }}>
+      {tabs.map(({ id, Ico, label }) => {
+        const on = active === id;
+        return (
+          <button key={id} onClick={() => setActive(id)} style={{
+            flex:1, background:'none', border:'none', cursor:'pointer',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+            fontFamily:'inherit', padding:'2px 0',
+          }}>
+            <div style={{
+              width:36, height:28, borderRadius:10,
+              background: on ? 'rgba(91,77,211,0.25)' : 'transparent',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              transition:'background 200ms',
+            }}>
+              <Ico s={19} c={on ? '#8B7CF8' : 'rgba(255,255,255,0.28)'} w={on ? 2.2 : 1.7}/>
+            </div>
+            <span style={{ fontSize:9, fontWeight:700, color:on?'#8B7CF8':'rgba(255,255,255,0.28)', letterSpacing:0.3 }}>
+              {label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   APP ROOT
+   ════════════════════════════════════════════════════════════════════════ */
+function App() {
+  const [screen,   setScreen]   = useState('home');
+  const [accounts, setAccounts] = useState([]);
+  const [tick,     setTick]     = useState(0);
+
+  useEffect(() => {
+    fetch('/api/accounts').then(r=>r.json()).then(d=>setAccounts(Array.isArray(d)?d:[])).catch(()=>{});
+  }, [tick]);
+
+  return (
+    <div style={{
+      width:390, height:844,
+      borderRadius:44, overflow:'hidden',
+      boxShadow:'0 40px 100px rgba(0,0,0,0.7)',
+      position:'relative', background:APP_BG,
+    }}>
+      {screen === 'home'     && <HomeScreen accounts={accounts} onAccountChange={() => setTick(t=>t+1)}/>}
+      {screen === 'accounts' && <AccountScreen accounts={accounts}/>}
+      {screen === 'txns'     && <TxnsScreen accounts={accounts}/>}
+      {screen === 'budget'   && <BudgetScreen accounts={accounts}/>}
+      {screen === 'settings' && <SettingScreen/>}
+
+      <BottomNav active={screen} setActive={setScreen}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

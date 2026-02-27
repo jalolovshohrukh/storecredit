@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hdr">
+  <div></div>
+  <h1>Transactions</h1>
+  <a href="/transactions/add" style="color:#6C63FF; text-decoration:none; font-size:28px; line-height:1;">+</a>
+</div>
+
+<div class="tabs">
+  <a href="/transactions?p=today&t={{ typ }}" class="tab {% if period == 'today' %}active{% endif %}">Today</a>
+  <a href="/transactions?p=month&t={{ typ }}" class="tab {% if period == 'month' %}active{% endif %}">Month</a>
+  <a href="/transactions?p=year&t={{ typ  }}" class="tab {% if period == 'year'  %}active{% endif %}">Year</a>
+  <a href="/transactions?p=all&t={{ typ   }}" class="tab {% if period == 'all'   %}active{% endif %}">All</a>
+</div>
+<div class="tabs" style="border-top:1px solid #f5f5f5;">
+  <a href="/transactions?p={{ period }}&t=all"      class="tab {% if typ == 'all'      %}active{% endif %}">All</a>
+  <a href="/transactions?p={{ period }}&t=expense"  class="tab {% if typ == 'expense'  %}active{% endif %}">Expenses</a>
+  <a href="/transactions?p={{ period }}&t=income"   class="tab {% if typ == 'income'   %}active{% endif %}">Income</a>
+  <a href="/transactions?p={{ period }}&t=transfer" class="tab {% if typ == 'transfer' %}active{% endif %}">Transfers</a>
+</div>
+
+<div style="padding:12px 16px 16px;">
+  {% if txns %}
+  <div class="card" style="padding:4px 16px;">
+    {% for t in txns %}
+    <div class="txn-row">
+      <div class="txn-icon {{ 'out' if t.type=='expense' else ('in' if t.type=='income' else 'tr') }}">
+        {{ t.cat_icon or ('↑' if t.type=='expense' else ('↓' if t.type=='income' else '⇄')) }}
+      </div>
+      <div style="flex:1; min-width:0;">
+        <div class="txn-desc">{{ t.cat_name or t.note or t.type.title() }}</div>
+        <div class="txn-meta">
+          {{ t.date }} · {{ t.acct_name or '' }}
+          {% if t.note and t.cat_name %} · {{ t.note }}{% endif %}
+        </div>
+      </div>
+      <div class="txn-amount {{ 'out' if t.type=='expense' else ('in' if t.type=='income' else 'tr') }}">
+        {{ '-' if t.type=='expense' else ('+' if t.type=='income' else '⇄') }}{{ fmt(t.amount, t.currency or 'USD') }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card" style="text-align:center; color:#ccc; padding:48px 16px;">
+    <div style="font-size:48px; margin-bottom:12px;">📊</div>
+    <div>No transactions for this period</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

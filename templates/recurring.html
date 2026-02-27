@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hdr">
+  <a href="/" class="back-btn">&#8249;</a>
+  <h1>Recurring</h1>
+  <span></span>
+</div>
+
+<div style="padding:16px;">
+  {% for r in rules %}
+  <div class="card" style="opacity:{{ '1' if r.active else '0.5' }};">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="font-size:24px;">{{ r.cat_icon or ('💸' if r.type == 'expense' else '💰') }}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:15px;">{{ r.title }}</div>
+        <div style="font-size:12px; color:#aaa;">
+          {{ r.frequency.title() }} · {{ r.acct_name or '?' }} · next {{ r.next_date }}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-weight:700; font-size:15px; color:{{ '#e53935' if r.type == 'expense' else '#43A047' }};">
+          {{ '-' if r.type == 'expense' else '+' }}{{ r.amount }}
+        </div>
+        <span class="badge badge-{{ r.type }}">{{ r.type }}</span>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <form method="POST" action="/recurring/{{ r.id }}/toggle" style="flex:1;">
+        <button class="btn btn-sm" style="width:100%; background:{{ '#aaa' if r.active else '#6C63FF' }};">
+          {{ 'Pause' if r.active else 'Resume' }}
+        </button>
+      </form>
+      <form method="POST" action="/recurring/{{ r.id }}/delete"
+            onsubmit="return confirm('Delete this recurring rule?');" style="flex:1;">
+        <button class="btn btn-sm btn-red" style="width:100%;">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <div style="font-weight:700; font-size:15px; margin-bottom:14px;">New Recurring Rule</div>
+    {% if accounts %}
+    <form method="POST" action="/recurring/add">
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" name="title" placeholder="e.g. Monthly Rent, Salary" required>
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <select name="type">
+          <option value="expense">Expense</option>
+          <option value="income">Income</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="0.01" placeholder="0.00" required>
+      </div>
+      <div class="form-group">
+        <label>Account</label>
+        <select name="account_id" required>
+          <option value="">Select account…</option>
+          {% for a in accounts %}
+          <option value="{{ a.id }}">{{ a.name }} ({{ a.currency }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Category (optional)</label>
+        <select name="category_id">
+          <option value="">No category</option>
+          {% for c in cats %}
+          <option value="{{ c.id }}">{{ c.icon }} {{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Frequency</label>
+        <select name="frequency">
+          <option value="monthly">Monthly</option>
+          <option value="weekly">Weekly</option>
+          <option value="daily">Daily</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>First occurrence</label>
+        <input type="date" name="next_date" value="{{ today }}" required>
+      </div>
+      <button type="submit" class="btn">Add Rule</button>
+    </form>
+    {% else %}
+    <div style="text-align:center; color:#bbb; padding:24px 0;">
+      <a href="/accounts/add" class="btn">Add an account first</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

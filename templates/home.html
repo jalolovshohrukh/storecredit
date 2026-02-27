@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+  <div class="label">Total Balance</div>
+  <div class="amount">
+    {% for cur, bal in nw.items() %}
+      <div style="{% if not loop.first %}font-size:22px;opacity:0.8;margin-top:4px;{% endif %}">
+        {{ fmt(bal, cur) }}
+      </div>
+    {% else %}
+      <div>—</div>
+    {% endfor %}
+  </div>
+  <div class="sub">{{ month }}</div>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="lbl">Income</div>
+      <div class="val green">{{ fmt(income) }}</div>
+    </div>
+    <div class="summary-box">
+      <div class="lbl">Expenses</div>
+      <div class="val red">{{ fmt(expense) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <div class="section-title">My Accounts</div>
+  <div class="acct-scroll">
+    {% for a in accounts %}
+    <a href="#" class="acct-card" style="background:{{ a.color }};">
+      <div class="name">{{ a.name }}</div>
+      <div class="cur">{{ a.currency }}</div>
+      <div class="bal">{{ fmt(a.balance, a.currency) }}</div>
+    </a>
+    {% endfor %}
+    <a href="/accounts/add" class="add-card">
+      <div class="plus">+</div>Add
+    </a>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px; padding-bottom:16px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+    <div class="section-title" style="margin-bottom:0;">Recent</div>
+    <a href="/transactions" style="font-size:13px; color:#6C63FF; text-decoration:none; font-weight:600;">See all</a>
+  </div>
+  {% if recent %}
+  <div class="card" style="padding:4px 16px;">
+    {% for t in recent %}
+    <div class="txn-row">
+      <div class="txn-icon {{ 'out' if t.type=='expense' else ('in' if t.type=='income' else 'tr') }}">
+        {{ t.cat_icon or ('↑' if t.type=='expense' else ('↓' if t.type=='income' else '⇄')) }}
+      </div>
+      <div style="flex:1; min-width:0;">
+        <div class="txn-desc">{{ t.cat_name or t.note or t.type.title() }}</div>
+        <div class="txn-meta">{{ t.date }} · {{ t.acct_name or '' }}</div>
+      </div>
+      <div class="txn-amount {{ 'out' if t.type=='expense' else ('in' if t.type=='income' else 'tr') }}">
+        {{ '-' if t.type=='expense' else ('+' if t.type=='income' else '⇄') }}{{ fmt(t.amount, t.currency or 'USD') }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card" style="text-align:center; padding:36px; color:#ccc;">
+    <div style="font-size:48px; margin-bottom:12px;">💸</div>
+    <div style="font-weight:600; color:#bbb; margin-bottom:16px;">No transactions yet</div>
+    <a href="/transactions/add" style="display:inline-block; padding:10px 20px; background:#6C63FF; color:white; border-radius:10px; text-decoration:none; font-weight:600; font-size:14px;">+ Add Transaction</a>
+  </div>
+  {% endif %}
+</div>
+
+<a href="/transactions/add" class="fab">+</a>
+{% endblock %}
