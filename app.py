@@ -149,6 +149,12 @@ def ensure_tables():
                 next_date DATE NOT NULL,
                 active BOOLEAN DEFAULT TRUE
             )""")
+        # Migrate existing tables: add columns that may not exist yet
+        c.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'")
+        c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_id VARCHAR(8)")
+        c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS to_account_id VARCHAR(8)")
+        c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note TEXT")
+        c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_id VARCHAR(8)")
         c.execute("SELECT COUNT(*) FROM categories")
         if c.fetchone()[0] == 0:
             cats = [
