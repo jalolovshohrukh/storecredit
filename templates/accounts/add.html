@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-hdr">
+  <a href="/" class="back-btn">&#8249;</a>
+  <h1>Add Account</h1>
+  <span></span>
+</div>
+
+<div class="section" style="margin-top:20px; padding-bottom:16px;">
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="POST">
+    <div class="form-group">
+      <label>Account Name</label>
+      <input type="text" name="name" placeholder="e.g. Cash, Bank, Savings" autofocus required>
+    </div>
+    <div class="form-group">
+      <label>Currency</label>
+      <select name="currency">
+        {% for c in currencies %}
+        <option value="{{ c }}" {% if c == 'USD' %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Starting Balance</label>
+      <input type="number" name="balance" step="0.01" min="0" placeholder="0.00" value="0">
+    </div>
+    <button type="submit" class="btn">Add Account</button>
+  </form>
+</div>
+{% endblock %}

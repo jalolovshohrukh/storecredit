@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<div class="page-hdr">
+  <div></div>
+  <h1>Stats</h1>
+  <span style="font-size:13px; color:#999;">{{ month }}</span>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <div class="summary-grid" style="margin-bottom:16px;">
+    <div class="summary-box">
+      <div class="lbl">Income</div>
+      <div class="val green">{{ fmt(income) }}</div>
+    </div>
+    <div class="summary-box">
+      <div class="lbl">Expenses</div>
+      <div class="val red">{{ fmt(expense) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Expenses by Category</div>
+  <div class="card" style="padding:20px;">
+    {% if pie_values != '[]' %}
+    <canvas id="pieChart" height="220"></canvas>
+    {% else %}
+    <div style="text-align:center; color:#ccc; padding:32px 0;">No expense data this month</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section" style="padding-bottom:16px;">
+  <div class="section-title">Income vs Expenses (6 months)</div>
+  <div class="card" style="padding:20px;">
+    <canvas id="barChart" height="220"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if pie_values != '[]' %}
+new Chart(document.getElementById('pieChart'), {
+  type: 'doughnut',
+  data: {
+    labels: {{ pie_labels|safe }},
+    datasets: [{ data: {{ pie_values|safe }}, backgroundColor: {{ pie_colors|safe }}, borderWidth: 2 }]
+  },
+  options: {
+    plugins: { legend: { position: 'bottom', labels: { padding: 12, font: { size: 12 } } } },
+    cutout: '60%'
+  }
+});
+{% endif %}
+new Chart(document.getElementById('barChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ bar_labels|safe }},
+    datasets: [
+      { label: 'Income',   data: {{ bar_income|safe }},  backgroundColor: '#43A047aa', borderRadius: 6 },
+      { label: 'Expenses', data: {{ bar_expense|safe }}, backgroundColor: '#e53935aa', borderRadius: 6 }
+    ]
+  },
+  options: {
+    plugins: { legend: { position: 'bottom', labels: { padding: 12, font: { size: 12 } } } },
+    scales: {
+      x: { grid: { display: false } },
+      y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 11 } } }
+    }
+  }
+});
+</script>
+{% endblock %}
