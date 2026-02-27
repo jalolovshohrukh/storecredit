@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, redirect, url_for, g
+from flask import Flask, request, render_template_string, redirect, url_for, g, send_from_directory
 from markupsafe import Markup
 from datetime import datetime, date, timedelta
 import psycopg2
@@ -406,6 +406,11 @@ HEAD = (
 FOOT = '</body></html>'
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.route('/ui')
+def react_ui():
+    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    return send_from_directory(static_dir, 'ui.html')
 
 @app.route('/')
 def home():

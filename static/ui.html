@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>Budget Tracker</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand:         #00C896;
+      --brand-dark:    #00A87C;
+      --dark-card:     #1C2033;
+      --text-primary:  #1C2033;
+      --text-sec:      #9CA3AF;
+      --text-expense:  #F97316;
+      --bg-app:        #F0F4F8;
+      --bg-card:       #FFFFFF;
+      --surface:       #F8FAFB;
+      --border:        #E5E7EB;
+    }
+
+    html, body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #E8EDF2 0%, #D4DCE8 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* ── Animations ───────────────────────────────────────── */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    @keyframes ripple-out {
+      0%   { transform: scale(0);  opacity: 0.55; }
+      100% { transform: scale(5);  opacity: 0;    }
+    }
+
+    @keyframes green-flash {
+      0%   { background-color: #C7FFF0; }
+      100% { background-color: transparent; }
+    }
+
+    /* Blinking cursor pseudo-element */
+    .cursor-blink::after {
+      content: '';
+      display: inline-block;
+      width: 3px;
+      height: 0.72em;
+      background: var(--brand);
+      margin-left: 3px;
+      vertical-align: middle;
+      border-radius: 2px;
+      animation: blink 1s ease-in-out infinite;
+    }
+
+    /* Scrollbar hide */
+    .no-scroll::-webkit-scrollbar { display: none; }
+    .no-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Transaction row hover */
+    .txn-row:hover { background: #F0FDF9 !important; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef } = React;
+
+    /* ═══════════════════════════════════════════════════════
+       UTILS
+    ═══════════════════════════════════════════════════════ */
+    const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+
+    function useCounter(target, duration = 1200) {
+      const [val, setVal] = useState(0);
+      useEffect(() => {
+        let start = null;
+        let raf;
+        const step = ts => {
+          if (!start) start = ts;
+          const p = Math.min((ts - start) / duration, 1);
+          setVal(easeOutExpo(p) * target);
+          if (p < 1) raf = requestAnimationFrame(step);
+        };
+        raf = requestAnimationFrame(step);
+        return () => cancelAnimationFrame(raf);
+      }, [target, duration]);
+      return val;
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       ICONS  (stroke-based SVG, matching lucide style)
+    ═══════════════════════════════════════════════════════ */
+    const Svg = ({ size = 24, stroke = 'currentColor', fill = 'none', sw = 1.9, children, style }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24"
+           fill={fill} stroke={stroke} strokeWidth={sw}
+           strokeLinecap="round" strokeLinejoin="round" style={style}>
+        {children}
+      </svg>
+    );
+
+    const IcWallet = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <rect x="1" y="4" width="22" height="16" rx="2.5"/>
+        <path d="M1 10h22"/>
+        <circle cx="17" cy="15" r="1" fill={c} stroke="none"/>
+      </Svg>
+    );
+    const IcChart = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+        <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+      </Svg>
+    );
+    const IcBell = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </Svg>
+    );
+    const IcPlus = ({ s, c }) => (
+      <Svg size={s} stroke={c} sw={2.2}>
+        <line x1="12" y1="4" x2="12" y2="20"/>
+        <line x1="4"  y1="12" x2="20" y2="12"/>
+      </Svg>
+    );
+    const IcX = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <line x1="18" y1="6"  x2="6"  y2="18"/>
+        <line x1="6"  y1="6"  x2="18" y2="18"/>
+      </Svg>
+    );
+    const IcChevR = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <polyline points="9 18 15 12 9 6"/>
+      </Svg>
+    );
+    const IcBack = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+        <line x1="18" y1="9"  x2="12" y2="15"/>
+        <line x1="12" y1="9"  x2="18" y2="15"/>
+      </Svg>
+    );
+    const IcEnter = ({ s, c }) => (
+      <Svg size={s} stroke={c} sw={2.1}>
+        <polyline points="9 10 4 15 9 20"/>
+        <path d="M20 4v7a4 4 0 0 1-4 4H4"/>
+      </Svg>
+    );
+    const IcMenu = ({ s, c }) => (
+      <Svg size={s} stroke={c}>
+        <line x1="3" y1="6"  x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="17" y2="18"/>
+      </Svg>
+    );
+
+    /* ═══════════════════════════════════════════════════════
+       DATA
+    ═══════════════════════════════════════════════════════ */
+    const TXNS = [
+      { id: 1, icon: '💡', label: 'Electricity', amount: 60.00,  bg: '#FFF8E1', tint: '#FF9800' },
+      { id: 2, icon: '🏠', label: 'Home',         amount: 23.50,  bg: '#E8F5E9', tint: '#43A047' },
+      { id: 3, icon: '🥑', label: 'Food & Drink', amount: 150.00, bg: '#E0F7FA', tint: '#00ACC1' },
+      { id: 4, icon: '🐱', label: 'Pet Food',     amount: 36.50,  bg: '#F3E5F5', tint: '#8E24AA' },
+    ];
+
+    /* ═══════════════════════════════════════════════════════
+       BALANCE COUNTER
+    ═══════════════════════════════════════════════════════ */
+    function BalanceCounter() {
+      const raw = useCounter(5430.60);
+      const whole = Math.floor(raw);
+      const cents = raw.toFixed(2).split('.')[1] || '00';
+      const fmtWhole = whole.toLocaleString('en-US');
+      return (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
+          <span style={{ fontSize: 36, fontWeight: 700, color: 'white', lineHeight: 1.1, letterSpacing: '-0.5px' }}>
+            ${fmtWhole}.{cents}
+          </span>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       TRANSACTION ROW
+    ═══════════════════════════════════════════════════════ */
+    function TxnRow({ txn, index }) {
+      const [vis, setVis]   = useState(false);
+      const [tap, setTap]   = useState(false);
+
+      useEffect(() => {
+        const t = setTimeout(() => setVis(true), 160 + index * 85);
+        return () => clearTimeout(t);
+      }, [index]);
+
+      const onTap = () => {
+        setTap(true);
+        setTimeout(() => setTap(false), 380);
+      };
+
+      const fmtAmt = txn.amount.toFixed(2).replace('.', ',');
+
+      return (
+        <div
+          className="txn-row"
+          onClick={onTap}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            height: 62, padding: '0 4px',
+            borderBottom: '1px solid #F3F4F6',
+            cursor: 'pointer',
+            backgroundColor: tap ? '#DCFFF3' : 'transparent',
+            transition: `opacity .38s ease ${index * 85}ms,
+                         transform .38s ease ${index * 85}ms,
+                         background-color .3s ease`,
+            opacity:   vis ? 1 : 0,
+            transform: vis ? 'translateY(0)' : 'translateY(12px)',
+            borderRadius: 10,
+          }}
+        >
+          <div style={{
+            width: 44, height: 44, borderRadius: '50%',
+            background: txn.bg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 20, flexShrink: 0,
+            boxShadow: `0 2px 8px ${txn.tint}28`,
+          }}>{txn.icon}</div>
+
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: '#1C2033' }}>
+            {txn.label}
+          </span>
+
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#F97316' }}>
+            {fmtAmt}
+          </span>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       BOTTOM NAV
+    ═══════════════════════════════════════════════════════ */
+    function BottomNav({ active, onAdd }) {
+      const items = [
+        { id: 'wallet', Ic: IcWallet },
+        { id: 'chart',  Ic: IcChart  },
+        { id: 'bell',   Ic: IcBell   },
+        { id: 'plus',   Ic: IcPlus,  action: onAdd },
+      ];
+      return (
+        <div style={{
+          position: 'absolute', bottom: 24, left: 16, right: 16,
+          background: '#1C2033',
+          borderRadius: 28,
+          padding: '12px 8px',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          boxShadow: '0 -4px 24px rgba(0,0,0,0.18)',
+          zIndex: 20,
+        }}>
+          {items.map(({ id, Ic, action }) => {
+            const on = id === active;
+            return (
+              <button
+                key={id}
+                onClick={action}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '8px 18px', borderRadius: 14,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: on ? 'white' : 'rgba(255,255,255,0.35)',
+                  filter: on ? 'drop-shadow(0 0 7px rgba(255,255,255,0.55))' : 'none',
+                  transform: on ? 'scale(1.2)' : 'scale(1)',
+                  transition: 'transform .22s ease, color .22s ease, filter .22s ease',
+                }}
+              >
+                <Ic s={22} c={on ? 'white' : 'rgba(255,255,255,0.35)'} />
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       DASHBOARD
+    ═══════════════════════════════════════════════════════ */
+    function Dashboard({ onAdd }) {
+      const [tab, setTab] = useState('today');
+
+      return (
+        <div style={{
+          height: '100%', display: 'flex', flexDirection: 'column',
+          background: 'var(--bg-app)', position: 'relative',
+        }}>
+
+          {/* ── Header ───────────────────────────────────── */}
+          <div style={{
+            background: 'linear-gradient(155deg, #00D49E 0%, #00A87C 100%)',
+            borderRadius: '0 0 28px 28px',
+            padding: '50px 24px 28px',
+            position: 'relative',
+            overflow: 'hidden',
+            flexShrink: 0,
+          }}>
+            {/* Depth gradient at bottom */}
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%',
+              background: 'linear-gradient(to bottom, transparent, rgba(0,50,30,0.10))',
+              pointerEvents: 'none',
+            }}/>
+            {/* Decorative circle */}
+            <div style={{
+              position: 'absolute', top: -40, right: -40,
+              width: 160, height: 160, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.06)',
+              pointerEvents: 'none',
+            }}/>
+            <div style={{
+              position: 'absolute', top: 20, right: 60,
+              width: 80, height: 80, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.05)',
+              pointerEvents: 'none',
+            }}/>
+
+            {/* Row: menu icon + avatar */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              marginBottom: 20, position: 'relative',
+            }}>
+              <button style={{
+                background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 10,
+                padding: '8px 9px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}>
+                <IcMenu s={20} c="white" />
+              </button>
+
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #FFD166 0%, #FF6B6B 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontSize: 12, fontWeight: 700,
+                border: '2px solid rgba(255,255,255,0.5)',
+                letterSpacing: '0.5px',
+              }}>SH</div>
+            </div>
+
+            {/* Budget label */}
+            <div style={{ color: 'white', opacity: 0.85, fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
+              My budget
+            </div>
+
+            {/* Animated balance */}
+            <BalanceCounter />
+          </div>
+
+          {/* ── Toggle tabs ─────────────────────────────── */}
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '18px 0 0', flexShrink: 0 }}>
+            <div style={{
+              background: 'white', borderRadius: 50, padding: 4,
+              display: 'inline-flex', position: 'relative',
+              boxShadow: '0 2px 14px rgba(0,0,0,0.07)',
+            }}>
+              {/* Sliding pill indicator */}
+              <div style={{
+                position: 'absolute', top: 4, bottom: 4,
+                width: 92, borderRadius: 50,
+                background: '#1C2033',
+                left: tab === 'today' ? 4 : 96,
+                transition: 'left 210ms cubic-bezier(0.4, 0, 0.2, 1)',
+                pointerEvents: 'none',
+              }}/>
+              {['today', 'month'].map(t => (
+                <button key={t}
+                  onClick={() => setTab(t)}
+                  style={{
+                    position: 'relative', zIndex: 1,
+                    width: 92, padding: '9px 0',
+                    border: 'none', background: 'none', cursor: 'pointer',
+                    fontSize: 14, fontWeight: 600,
+                    color: tab === t ? 'white' : '#9CA3AF',
+                    transition: 'color 210ms ease',
+                    borderRadius: 50,
+                    fontFamily: "'DM Sans', sans-serif",
+                    textAlign: 'center',
+                  }}
+                >{t === 'today' ? 'Today' : 'Month'}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Date row ─────────────────────────────────── */}
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '18px 24px 10px', flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#1C2033' }}>18 May 2020</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#00C896' }}>270</span>
+          </div>
+
+          {/* ── Transaction list ─────────────────────────── */}
+          <div style={{ flex: 1, padding: '0 20px', overflowY: 'auto', paddingBottom: 100 }} className="no-scroll">
+            <div style={{
+              background: 'white', borderRadius: 20,
+              padding: '2px 14px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
+            }}>
+              {TXNS.map((t, i) => <TxnRow key={t.id} txn={t} index={i} />)}
+            </div>
+          </div>
+
+          {/* ── Bottom Nav ───────────────────────────────── */}
+          <BottomNav active="wallet" onAdd={onAdd} />
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       NUMPAD KEY
+    ═══════════════════════════════════════════════════════ */
+    function NumKey({ label, row, col, onPress }) {
+      const [pressed, setPressed] = useState(false);
+      const [hover,   setHover]   = useState(false);
+
+      const fire = () => {
+        setPressed(true);
+        setTimeout(() => setPressed(false), 90);
+        onPress(label);
+      };
+
+      return (
+        <button
+          onClick={fire}
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            gridRow: row, gridColumn: col,
+            background: hover ? '#DDFFF5' : 'white',
+            border: 'none', cursor: 'pointer',
+            fontSize: 22, fontWeight: 500,
+            color: '#1C2033', borderRadius: 10,
+            height: 54,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: pressed ? 'scale(0.94)' : 'scale(1)',
+            transition: 'transform 90ms ease, background 120ms ease',
+            fontFamily: "'DM Sans', sans-serif",
+            boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
+          }}
+        >
+          {label === '⌫' ? <IcBack s={20} c="#1C2033" /> : label}
+        </button>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       CONFIRM KEY
+    ═══════════════════════════════════════════════════════ */
+    function ConfirmKey({ onPress }) {
+      const [pressed, setPressed] = useState(false);
+
+      const fire = () => {
+        setPressed(true);
+        setTimeout(() => { setPressed(false); onPress(); }, 130);
+      };
+
+      return (
+        <button
+          onClick={fire}
+          style={{
+            gridRow: '1 / span 4', gridColumn: 4,
+            background: 'linear-gradient(160deg, #00D49E 0%, #009E72 100%)',
+            border: 'none', cursor: 'pointer',
+            borderRadius: 14,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: pressed ? 'scale(0.95)' : 'scale(1)',
+            transition: 'transform 90ms ease',
+            boxShadow: '0 6px 24px rgba(0,200,150,0.38)',
+          }}
+        >
+          <IcEnter s={26} c="white" />
+        </button>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       QUICK PILL
+    ═══════════════════════════════════════════════════════ */
+    function QuickPill({ value, onTap }) {
+      const [hover,  setHover]  = useState(false);
+      const [ripple, setRipple] = useState(false);
+      const [rKey,   setRKey]   = useState(0);
+
+      const fire = () => {
+        setRipple(true);
+        setRKey(k => k + 1);
+        setTimeout(() => setRipple(false), 620);
+        onTap();
+      };
+
+      return (
+        <button
+          onClick={fire}
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            position: 'relative', overflow: 'hidden',
+            flex: 1, padding: '11px 0',
+            background: hover ? '#00C896' : '#F0F4F8',
+            border: 'none', borderRadius: 50,
+            cursor: 'pointer',
+            fontSize: 14, fontWeight: 600,
+            color: hover ? 'white' : '#1C2033',
+            transition: 'background .15s ease, color .15s ease',
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          {ripple && (
+            <span key={rKey} style={{
+              position: 'absolute', top: '50%', left: '50%',
+              width: 10, height: 10,
+              marginLeft: -5, marginTop: -5,
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.6)',
+              animation: 'ripple-out .62s ease-out forwards',
+              pointerEvents: 'none',
+            }}/>
+          )}
+          {value}
+        </button>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       FORM ROW (category / date / notes)
+    ═══════════════════════════════════════════════════════ */
+    function FormRow({ icon, iconBg, iconDark, label, isPlaceholder, chevron, last }) {
+      const [hover, setHover] = useState(false);
+      return (
+        <div
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 14,
+            height: 62, padding: '0 16px',
+            cursor: 'pointer',
+            borderBottom: last ? 'none' : '1px solid var(--border)',
+            background: hover ? '#F8FAFB' : 'transparent',
+            transition: 'background .15s ease',
+          }}
+        >
+          <div style={{
+            width: 38, height: 38, borderRadius: '50%',
+            background: iconBg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: iconDark ? 15 : 19,
+            color: iconDark ? 'white' : 'inherit',
+            flexShrink: 0,
+            fontFamily: 'sans-serif',
+          }}>{icon}</div>
+
+          <span style={{
+            flex: 1, fontSize: 15, fontWeight: 500,
+            color: isPlaceholder ? '#9CA3AF' : '#1C2033',
+          }}>{label}</span>
+
+          {chevron && <IcChevR s={16} c="#C4C9D4" />}
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       ADD TRANSACTION MODAL
+    ═══════════════════════════════════════════════════════ */
+    function AddTransaction({ onClose }) {
+      const [amount, setAmount] = useState('2,6');
+      const [open,   setOpen]   = useState(false);
+
+      useEffect(() => {
+        // Defer one tick so the initial translateY(100%) is painted first
+        const t = setTimeout(() => setOpen(true), 16);
+        return () => clearTimeout(t);
+      }, []);
+
+      const close = () => {
+        setOpen(false);
+        setTimeout(onClose, 340);
+      };
+
+      const handleKey = k => {
+        if (k === '⌫') {
+          setAmount(p => p.length > 1 ? p.slice(0, -1) : '0');
+        } else if (k === ',') {
+          setAmount(p => p.includes(',') ? p : p + ',');
+        } else {
+          setAmount(p => p === '0' ? k : p + k);
+        }
+      };
+
+      const addQuick = val => {
+        const n = parseFloat(val.replace(',', '.'));
+        setAmount(p => {
+          const cur = parseFloat(p.replace(',', '.')) || 0;
+          return (cur + n).toFixed(2).replace('.', ',');
+        });
+      };
+
+      const NUM_KEYS = ['1','2','3','4','5','6','7','8','9',',','0','⌫'];
+
+      return (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 50,
+          background: open ? 'rgba(10,20,40,0.28)' : 'rgba(10,20,40,0)',
+          backdropFilter: open ? 'blur(3px)' : 'blur(0px)',
+          transition: 'background .32s ease, backdrop-filter .32s ease',
+          display: 'flex', alignItems: 'flex-end',
+        }}>
+          <div style={{
+            width: '100%',
+            background: 'white',
+            borderRadius: '28px 28px 0 0',
+            transform: open ? 'translateY(0)' : 'translateY(100%)',
+            transition: 'transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+            overflow: 'hidden',
+          }}>
+            {/* Drag handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E5E7EB' }}/>
+            </div>
+
+            {/* Top bar */}
+            <div style={{
+              display: 'flex', alignItems: 'center',
+              padding: '10px 20px 14px', position: 'relative',
+            }}>
+              <button
+                onClick={close}
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: '#F3F4F6', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#E5E7EB'}
+                onMouseLeave={e => e.currentTarget.style.background = '#F3F4F6'}
+              >
+                <IcX s={15} c="#1C2033" />
+              </button>
+              <span style={{
+                position: 'absolute', left: 0, right: 0,
+                textAlign: 'center', fontSize: 16, fontWeight: 600, color: '#1C2033',
+                pointerEvents: 'none',
+              }}>Add Transaction</span>
+            </div>
+
+            {/* Amount input */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '2px 20px 20px',
+            }}>
+              <div style={{
+                background: '#00C896', color: 'white',
+                padding: '6px 18px', borderRadius: 50,
+                fontSize: 13, fontWeight: 600, flexShrink: 0,
+                boxShadow: '0 2px 10px rgba(0,200,150,0.35)',
+              }}>USD</div>
+
+              <div className="cursor-blink" style={{
+                flex: 1, textAlign: 'right',
+                fontSize: 46, fontWeight: 700,
+                color: '#1C2033', letterSpacing: '-1px',
+                fontFamily: "'DM Sans', sans-serif",
+                lineHeight: 1.1,
+              }}>{amount}</div>
+            </div>
+
+            {/* Form fields */}
+            <div style={{
+              margin: '0 20px',
+              borderRadius: 16,
+              background: '#FAFBFC',
+              border: '1px solid #EFF0F2',
+              overflow: 'hidden',
+            }}>
+              <FormRow icon="🥑" iconBg="#E0F7FA" iconDark={false} label="Food & Drink" chevron={true}  last={false} />
+              <FormRow icon="📅" iconBg="#1C2033" iconDark={true}  label="18 May 2020"  chevron={false} last={false} />
+              <FormRow icon="≡"  iconBg="#1C2033" iconDark={true}  label="Notes"  isPlaceholder={true} chevron={false} last={true} />
+            </div>
+
+            {/* Quick pills */}
+            <div style={{ display: 'flex', gap: 8, padding: '14px 20px 10px' }}>
+              {['4,99', '9,99', '19,99'].map(v => (
+                <QuickPill key={v} value={v} onTap={() => addQuick(v)} />
+              ))}
+            </div>
+
+            {/* Numpad */}
+            <div style={{
+              padding: '4px 20px 34px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr) 1.1fr',
+              gridTemplateRows: 'repeat(4, 54px)',
+              gap: 9,
+            }}>
+              {NUM_KEYS.map((k, i) => (
+                <NumKey
+                  key={i}
+                  label={k}
+                  row={Math.floor(i / 3) + 1}
+                  col={(i % 3) + 1}
+                  onPress={handleKey}
+                />
+              ))}
+              <ConfirmKey onPress={close} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       APP ROOT
+    ═══════════════════════════════════════════════════════ */
+    function App() {
+      const [showAdd, setShowAdd] = useState(false);
+
+      return (
+        <div style={{
+          width: 390, height: 844,
+          background: '#F0F4F8',
+          borderRadius: 40,
+          overflow: 'hidden',
+          position: 'relative',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.20)',
+        }}>
+          <Dashboard onAdd={() => setShowAdd(true)} />
+          {showAdd && (
+            <AddTransaction onClose={() => setShowAdd(false)} />
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
