@@ -403,7 +403,7 @@ FOOT = '</body></html>'
 
 @app.route('/')
 def home():
-    accounts = fetch_all("SELECT * FROM accounts ORDER BY created_at")
+    accounts = fetch_all("SELECT * FROM accounts ORDER BY name")
     now = datetime.now()
     ym = now.strftime('%Y-%m')
     inc  = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND TO_CHAR(date,'YYYY-MM')=%s", (ym,))
@@ -413,7 +413,7 @@ def home():
         FROM transactions t
         LEFT JOIN categories c ON t.category_id=c.id
         LEFT JOIN accounts a ON t.account_id=a.id
-        ORDER BY t.date DESC, t.created_at DESC LIMIT 5
+        ORDER BY t.date DESC, t.id DESC LIMIT 5
     """)
     nw = {}
     for a in accounts:
@@ -521,7 +521,7 @@ def txn_list():
         FROM transactions t
         LEFT JOIN categories c ON t.category_id=c.id
         LEFT JOIN accounts a ON t.account_id=a.id
-        {where} ORDER BY t.date DESC, t.created_at DESC
+        {where} ORDER BY t.date DESC, t.id DESC
     """, tuple(params))
     return render_template_string(TXN_LIST_TMPL,
         txns=txns, period=period, typ=typ,
