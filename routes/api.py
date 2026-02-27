@@ -108,6 +108,85 @@ def get_budgets():
     return jsonify(cats)
 
 
+@api_bp.route('/home')
+def get_home():
+    """Returns category cards (with totals) for the home screen grid."""
+    account_id = request.args.get('account_id')
+    period     = request.args.get('p', 'all')
+    now        = datetime.now()
+
+    t_filters, t_params = [], []
+    if period == 'today':
+        t_filters.append("t.date = %s");            t_params.append(now.strftime('%Y-%m-%d'))
+    elif period == 'month':
+        t_filters.append("t.date::text LIKE %s");   t_params.append(now.strftime('%Y-%m') + '%')
+    elif period == 'year':
+        t_filters.append("t.date::text LIKE %s");   t_params.append(str(now.year) + '%')
+    elif period and period != 'all' and len(period) == 7:
+        t_filters.append("t.date::text LIKE %s");   t_params.append(period + '%')
+    if account_id:
+        t_filters.append("t.account_id = %s");      t_params.append(account_id)
+
+    t_where = ('AND ' + ' AND '.join(t_filters)) if t_filters else ''
+
+    def cat_rows(typ):
+        return fetch_all(f"""
+            SELECT c.id, c.name, c.icon, c.color, c.type,
+                   COALESCE(SUM(t.amount), 0) AS total,
+                   b.amount AS budget_amount
+            FROM categories c
+            LEFT JOIN transactions t
+              ON t.category_id = c.id AND t.type = %s {t_where}
+            LEFT JOIN budgets b ON b.category_id = c.id
+            WHERE c.type = %s
+            GROUP BY c.id, c.name, c.icon, c.color, c.type, b.amount
+            ORDER BY total DESC, c.name
+        """, (typ, *t_params, typ))
+
+    exp_cats = cat_rows('expense')
+    inc_cats = cat_rows('income')
+    return jsonify({
+        'expense_total': sum(r['total'] for r in exp_cats),
+        'income_total':  sum(r['total'] for r in inc_cats),
+        'expense_cats':  exp_cats,
+        'income_cats':   inc_cats,
+    })
+
+
+@api_bp.route('/categories', methods=['POST'])
+def create_category():
+    d    = request.get_json(force=True)
+    name = (d.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'name required'}), 400
+    cid = gen_id()
+    execute(
+        "INSERT INTO categories(id,name,type,icon,color) VALUES(%s,%s,%s,%s,%s)",
+        (cid, name, d.get('type','expense'), d.get('icon','💰'), d.get('color','#2A3A1A')),
+    )
+    return jsonify({'ok': True, 'id': cid})
+
+
+@api_bp.route('/categories/<cid>', methods=['DELETE'])
+def delete_category(cid):
+    execute("DELETE FROM transactions WHERE category_id=%s", (cid,))
+    execute("DELETE FROM budgets WHERE category_id=%s", (cid,))
+    execute("DELETE FROM categories WHERE id=%s", (cid,))
+    return jsonify({'ok': True})
+
+
+@api_bp.route('/categories/<cid>', methods=['PUT'])
+def update_category(cid):
+    d = request.get_json(force=True)
+    fields, vals = [], []
+    for col in ('name', 'icon', 'color', 'type'):
+        if col in d:
+            fields.append(f"{col}=%s"); vals.append(d[col])
+    if fields:
+        execute(f"UPDATE categories SET {', '.join(fields)} WHERE id=%s", (*vals, cid))
+    return jsonify({'ok': True})
+
+
 @api_bp.route('/stats')
 def get_stats():
     now = datetime.now()
