@@ -14,7 +14,11 @@ DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
 def get_conn():
     if 'conn' not in g:
-        g.conn = psycopg2.connect(DATABASE_URL)
+        # Supabase requires SSL; append sslmode if not already present
+        url = DATABASE_URL
+        if 'sslmode' not in url:
+            url += ('&' if '?' in url else '?') + 'sslmode=require'
+        g.conn = psycopg2.connect(url)
     return g.conn
 
 @app.teardown_appcontext
@@ -33,6 +37,18 @@ def check_db():
             'environment variable in your Vercel project settings, then redeploy.</p>'
             '</div>'
         ), 503
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    tb = traceback.format_exc()
+    return (
+        '<div style="font-family:monospace;padding:2rem;max-width:700px;margin:auto">'
+        f'<h2 style="color:#c62828">Error</h2>'
+        f'<pre style="background:#fafafa;padding:1rem;border-radius:8px;overflow:auto;'
+        f'font-size:13px;color:#333;border:1px solid #eee">{tb}</pre>'
+        '</div>'
+    ), 500
 
 COLORS = ['#6C63FF', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#F7B731', '#A29BFE', '#FD79A8']
 
