@@ -8,26 +8,13 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --brand:        #00C896;
-      --brand-dark:   #00A87C;
-      --dark-card:    #1C2033;
-      --text-primary: #1C2033;
-      --text-sec:     #9CA3AF;
-      --text-expense: #F97316;
-      --bg-app:       #F0F4F8;
-      --bg-card:      #FFFFFF;
-      --surface:      #F8FAFB;
-      --border:       #E5E7EB;
-    }
-
     html, body {
       font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: linear-gradient(135deg, #E8EDF2 0%, #D4DCE8 100%);
+      background: #D6DCE8;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -40,993 +27,900 @@
       justify-content: center;
       min-height: 100vh;
       width: 100%;
+      padding: 32px 0;
     }
 
     @keyframes blink {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0; }
     }
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: translateY(0);    }
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0);   }
     }
-    @keyframes rippleOut {
-      from { transform: scale(0.3); opacity: 0.5; }
-      to   { transform: scale(3);   opacity: 0;   }
+    @keyframes modalIn {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0);    }
     }
-    @keyframes greenFlash {
-      0%   { background: #C7FFF0; }
-      100% { background: transparent; }
-    }
+    ::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useCallback } = React;
 
-/* ─── Design tokens (mirrors CSS vars for inline use) ───────────────────── */
-const T = {
-  brand: '#00C896', brandDark: '#00A87C', dark: '#1C2033',
-  textPrimary: '#1C2033', textSec: '#9CA3AF', textExpense: '#F97316',
-  bgApp: '#F0F4F8', bgCard: '#FFFFFF', surface: '#F8FAFB', border: '#E5E7EB',
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+const D = {
+  /* gradient header */
+  h1: '#3A2D8F', h2: '#6553D8',
+  /* accent */
+  purple: '#5B4DD3', purpleSoft: '#EDE9FE', purpleText: '#4338CA',
+  green: '#22C55E', greenSoft: '#DCFCE7', greenText: '#15803D',
+  red: '#EF4444', redSoft: '#FEE2E2', redText: '#DC2626',
+  orange: '#F97316', orangeSoft: '#FFF7ED',
+  /* neutrals */
+  ink: '#0D0D1A', body: '#374151', sub: '#9CA3AF', faint: '#D1D5DB',
+  /* surfaces */
+  bg: '#F2F4F8', card: '#FFFFFF', border: '#E9ECF2',
+  /* account card gradient pairs */
+  acct: [
+    ['#5B4DD3','#8B7CF8'],
+    ['#0EA5E9','#38BDF8'],
+    ['#10B981','#34D399'],
+    ['#F59E0B','#FBBF24'],
+    ['#EC4899','#F472B6'],
+  ],
 };
 
-/* ─── Inline SVG icons (lucide-style) ──────────────────────────────────── */
-const Icon = ({ d, size = 22, color = 'currentColor', strokeWidth = 2, fill = 'none', ...rest }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill}
-       stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...rest}>
-    {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p}/>) : <path d={d}/>}
+/* ── Icons (hand-tuned SVGs) ─────────────────────────────────────────────── */
+const S = ({ s=22, c='currentColor', w=1.8, children, ...p }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none"
+       stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" {...p}>
+    {children}
   </svg>
 );
 
-const WalletIcon  = (p) => <Icon {...p} d={['M21 12V7H5a2 2 0 0 1 0-4h14v4','M3 5v14a2 2 0 0 0 2 2h16v-5','M18 12a2 2 0 0 0 0 4h4v-4Z']}/>;
-const PieIcon     = (p) => <Icon {...p} d={['M21.21 15.89A10 10 0 1 1 8 2.83','M22 12A10 10 0 0 0 12 2v10z']}/>;
-const BellIcon    = (p) => <Icon {...p} d={['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9','M10.3 21a1.94 1.94 0 0 0 3.4 0']}/>;
-const PlusIcon    = (p) => <Icon {...p} strokeWidth={2.5} d={['M12 5v14','M5 12h14']}/>;
-const XIcon       = (p) => <Icon {...p} strokeWidth={2.5} d={['M18 6 6 18','M6 6l12 12']}/>;
-const ChevronIcon = (p) => <Icon {...p} d="M9 18l6-6-6-6"/>;
-const DeleteIcon  = (p) => <Icon {...p} d={['M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z','M18 9l-6 6','M12 9l6 6']}/>;
-const EnterIcon   = (p) => <Icon {...p} strokeWidth={2.5} d={['M9 10 4 15l5 5','M20 4v7a4 4 0 0 1-4 4H4']}/>;
-const MenuIcon    = (p) => <Icon {...p} d={['M4 6h16','M4 12h16','M4 18h16']}/>;
-const CalIcon     = (p) => <Icon {...p} d={['M8 2v4','M16 2v4','M3 10h18','rect x=3 y=4 width=18 height=18 rx=2 ry=2']} />;
-const NotesIcon   = (p) => <Icon {...p} d={['M3 10h11','M3 6h18','M3 14h6','M3 18h6']}/>;
-const RecurIcon   = (p) => <Icon {...p} d={['M17 2l4 4-4 4','M3 11V9a4 4 0 0 1 4-4h14','M7 22l-4-4 4-4','M21 13v2a4 4 0 0 1-4 4H3']}/>;
+const IcoHome   = p => <S {...p}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></S>;
+const IcoList   = p => <S {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></S>;
+const IcoBudget = p => <S {...p}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></S>;
+const IcoStats  = p => <S {...p}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></S>;
+const IcoPlus   = p => <S {...p} w={2.5}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></S>;
+const IcoX      = p => <S {...p} w={2.5}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></S>;
+const IcoChev   = p => <S {...p}><polyline points="9 18 15 12 9 6"/></S>;
+const IcoDel    = p => <S {...p}><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></S>;
+const IcoEnter  = p => <S {...p} w={2.5}><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></S>;
+const IcoCal    = p => <S {...p}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></S>;
+const IcoNote   = p => <S {...p}><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></S>;
+const IcoWallet = p => <S {...p}><path d="M20 12V22H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2"/><path d="M20 12a2 2 0 0 0-4 0c0 1.1.9 2 2 2h4v-2h-2z"/></S>;
+const IcoSwap   = p => <S {...p}><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></S>;
+const IcoEye    = p => <S {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></S>;
+const IcoBell   = p => <S {...p}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></S>;
+const IcoDown   = p => <S {...p}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></S>;
+const IcoUp     = p => <S {...p}><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></S>;
 
-/* calendar icon via rect trick — inline rect element */
-function CalendarIcon({ size = 18, color = 'currentColor' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-         stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2"/>
-      <line x1="8"  y1="2"  x2="8"  y2="6"/>
-      <line x1="16" y1="2"  x2="16" y2="6"/>
-      <line x1="3"  y1="10" x2="21" y2="10"/>
-    </svg>
-  );
-}
-
-/* ─── easeOutExpo + useCountUp ─────────────────────────────────────────── */
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 function easeOutExpo(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
 
-function useCountUp(target, ms = 1200) {
-  const [val, setVal] = useState(0);
+function useCountUp(target, ms = 1100) {
+  const [v, sv] = useState(0);
   useEffect(() => {
-    if (!target) return;
-    let start = null;
-    const frame = (ts) => {
-      if (!start) start = ts;
-      const p = Math.min((ts - start) / ms, 1);
-      setVal(easeOutExpo(p) * target);
-      if (p < 1) requestAnimationFrame(frame);
+    if (!target && target !== 0) return;
+    let t0 = null;
+    const f = ts => {
+      if (!t0) t0 = ts;
+      const p = Math.min((ts - t0) / ms, 1);
+      sv(easeOutExpo(p) * target);
+      if (p < 1) requestAnimationFrame(f);
     };
-    requestAnimationFrame(frame);
-  }, [target, ms]);
-  return val;
+    requestAnimationFrame(f);
+  }, [target]);
+  return v;
 }
 
-/* ─── Helpers ───────────────────────────────────────────────────────────── */
-function money(n, decimals = 2) {
-  return parseFloat(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
+const $ = (n, d = 2) =>
+  parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
-const ICON_BG = {
-  '💡': '#FEF3C7', '🏠': '#EFF6FF', '🥑': '#F0FDF4', '🐱': '#FDF4FF',
-  '💸': '#FFF7ED', '💰': '#F0FDF4', '🚗': '#EFF6FF', '🛍': '#FDF4FF',
-  '🎬': '#FEF3C7', '💊': '#F0FDF4', '📚': '#EFF6FF', '💼': '#F0FDF4',
-  '💻': '#EFF6FF', '📈': '#FEF3C7', '⇄': '#EFF6FF',
+const IBGS = {
+  '💡':'#FEF9C3','🏠':'#DBEAFE','🥑':'#DCFCE7','🐱':'#F3E8FF',
+  '💸':'#FEF3C7','💰':'#DCFCE7','🚗':'#DBEAFE','🛍':'#FCE7F3',
+  '🎬':'#FEF9C3','💊':'#DCFCE7','📚':'#DBEAFE','💼':'#DCFCE7',
+  '💻':'#DBEAFE','📈':'#FEF9C3','⇄':'#EDE9FE','🏷️':'#F3F4F6',
 };
-const CHART_COLORS = ['#00C896','#F97316','#6366F1','#F59E0B','#EC4899','#14B8A6','#8B5CF6','#EF4444'];
+const PIE_C = ['#5B4DD3','#22C55E','#EF4444','#F59E0B','#0EA5E9','#EC4899','#10B981','#8B5CF6'];
 
-/* ════════════════════════════════════════════════════════════════════════
-   SCREEN 1 — DASHBOARD
-   ════════════════════════════════════════════════════════════════════════ */
-function Dashboard({ accounts, transactions, activeTab, setActiveTab, loading, onNav }) {
-  const total = accounts.reduce((s, a) => s + (a.balance || 0), 0);
-  const animated = useCountUp(total);
-
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const ym = now.toISOString().slice(0, 7);
-
-  const shown = transactions.filter(t =>
-    activeTab === 'today' ? t.date === todayStr : (t.date || '').startsWith(ym)
-  );
-  const totalExp = shown.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
-  const totalInc = shown.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
-
-  const dateStr = now.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+/* ══════════════════════════════════════════════════════════════════════════
+   DASHBOARD
+   ══════════════════════════════════════════════════════════════════════════ */
+function Dashboard({ accounts, transactions, loading }) {
+  const [hide, setHide] = useState(false);
+  const total  = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const anim   = useCountUp(total);
+  const now    = new Date();
+  const ym     = now.toISOString().slice(0, 7);
+  const month  = transactions.filter(t => (t.date || '').startsWith(ym));
+  const income  = month.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
+  const expense = month.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none' }}>
+    <div style={{ height: '100%', overflowY: 'auto', background: D.bg }}>
 
-      {/* ── Header ───────────────────────────────────────────────────────── */}
+      {/* ── GRADIENT HEADER ─────────────────────────────────────────────── */}
       <div style={{
-        background: 'linear-gradient(160deg, #00C896 0%, #00A87C 100%)',
-        borderRadius: '0 0 28px 28px',
-        padding: '52px 24px 28px',
+        background: `linear-gradient(150deg, ${D.h1} 0%, ${D.h2} 100%)`,
+        padding: '52px 22px 28px',
+        borderRadius: '0 0 32px 32px',
         position: 'relative', overflow: 'hidden',
       }}>
-        {/* depth gradient */}
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, height: 48,
-          background: 'linear-gradient(to bottom, transparent, rgba(0,100,70,0.18))',
-          pointerEvents: 'none',
-        }}/>
+        {/* subtle orbs */}
+        <div style={{ position:'absolute', top:-70, right:-50, width:200, height:200, borderRadius:'50%', background:'rgba(255,255,255,0.05)', pointerEvents:'none' }}/>
+        <div style={{ position:'absolute', bottom:-40, left:-30, width:140, height:140, borderRadius:'50%', background:'rgba(255,255,255,0.05)', pointerEvents:'none' }}/>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
-          <button style={{
-            background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 12,
-            padding: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <MenuIcon size={20} color="white"/>
+        {/* top row */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:26 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{
+              width:40, height:40, borderRadius:'50%',
+              background:'linear-gradient(135deg,#FBBF24,#F97316)',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:14, fontWeight:700, color:'white', flexShrink:0,
+            }}>SH</div>
+            <div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:500, letterSpacing:0.3 }}>
+                {now.toLocaleDateString('en-US',{weekday:'long'})}
+              </div>
+              <div style={{ fontSize:14, color:'white', fontWeight:700, lineHeight:1.2 }}>Shohrukh</div>
+            </div>
+          </div>
+          <button style={{ background:'rgba(255,255,255,0.14)', border:'none', borderRadius:'50%', width:38, height:38, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <IcoBell s={17} c="white"/>
           </button>
-          <div style={{
-            width: 38, height: 38, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #FFB347, #FF6B6B)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 700, color: 'white',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.22)',
-          }}>SH</div>
         </div>
 
-        <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-          My budget
+        {/* balance */}
+        <div style={{ color:'rgba(255,255,255,0.6)', fontSize:12, fontWeight:600, letterSpacing:1.2, textTransform:'uppercase', marginBottom:8 }}>
+          Total Balance
         </div>
-        <div style={{ color: 'white', fontSize: 36, fontWeight: 700, letterSpacing: '-1.5px', lineHeight: 1.1 }}>
-          ${money(animated)}
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+          <div style={{ fontSize:38, fontWeight:800, color:'white', letterSpacing:'-2px', lineHeight:1 }}>
+            {hide ? '$ ••••••' : `$${$(anim)}`}
+          </div>
+          <button onClick={() => setHide(h => !h)} style={{
+            background:'rgba(255,255,255,0.18)', border:'none', borderRadius:8,
+            padding:'5px 8px', cursor:'pointer', display:'flex', alignItems:'center',
+          }}>
+            <IcoEye s={14} c="rgba(255,255,255,0.85)"/>
+          </button>
+        </div>
+        <div style={{ color:'rgba(255,255,255,0.5)', fontSize:13, marginBottom:24, fontWeight:400 }}>
+          {monthLabel}
         </div>
 
-        <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
-          <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13 }}>
-            ↓&nbsp;<strong style={{ color: 'white' }}>${money(totalInc)}</strong> income
-          </span>
-          <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13 }}>
-            ↑&nbsp;<strong style={{ color: 'white' }}>${money(totalExp)}</strong> expenses
-          </span>
-        </div>
-      </div>
-
-      {/* ── Tab toggle ───────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0 0' }}>
-        <div style={{
-          background: 'rgba(0,0,0,0.06)', borderRadius: 50, padding: 4, display: 'flex',
-        }}>
-          {['today', 'month'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{
-              padding: '8px 26px', borderRadius: 50, border: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
-              background: activeTab === tab ? T.dark : 'transparent',
-              color: activeTab === tab ? 'white' : T.textSec,
-              transition: 'all 200ms ease',
-            }}>
-              {tab === 'today' ? 'Today' : 'Month'}
-            </button>
+        {/* income / expense chips */}
+        <div style={{ display:'flex', gap:12 }}>
+          {[
+            { label:'Income', val:income, Icon:IcoDown, bg:'rgba(34,197,94,0.18)', dot:'#4ADE80' },
+            { label:'Expenses', val:expense, Icon:IcoUp, bg:'rgba(239,68,68,0.18)', dot:'#F87171' },
+          ].map(({ label, val, Icon, bg, dot }) => (
+            <div key={label} style={{ flex:1, background:bg, borderRadius:16, padding:'13px 15px', backdropFilter:'blur(8px)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7 }}>
+                <div style={{ width:24, height:24, borderRadius:'50%', background:'rgba(255,255,255,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Icon s={12} c={dot}/>
+                </div>
+                <span style={{ fontSize:11, color:'rgba(255,255,255,0.65)', fontWeight:600, letterSpacing:0.8, textTransform:'uppercase' }}>{label}</span>
+              </div>
+              <div style={{ fontSize:19, fontWeight:800, color:'white', letterSpacing:'-0.5px' }}>${$(val)}</div>
+            </div>
           ))}
         </div>
       </div>
 
-      {/* ── Date row ─────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '16px 24px 10px',
-      }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: T.textPrimary }}>{dateStr}</span>
-        <span style={{ fontSize: 15, fontWeight: 700, color: T.brand }}>${money(totalExp)}</span>
+      {/* ── MY ACCOUNTS ──────────────────────────────────────────────────── */}
+      <div style={{ paddingTop:28 }}>
+        <SectionHeader title="MY ACCOUNTS"/>
+        <div style={{ display:'flex', gap:14, overflowX:'auto', padding:'0 22px 4px', scrollbarWidth:'none' }}>
+          {accounts.length === 0
+            ? <p style={{ color:D.sub, fontSize:13, padding:'8px 0' }}>No accounts — add one from the web.</p>
+            : accounts.map((a, i) => {
+                const [c1, c2] = D.acct[i % D.acct.length];
+                return (
+                  <div key={a.id} style={{
+                    minWidth:160, borderRadius:22,
+                    background:`linear-gradient(135deg,${c1},${c2})`,
+                    padding:'18px 18px 16px', flexShrink:0,
+                    boxShadow:`0 10px 28px ${c1}55`,
+                    position:'relative', overflow:'hidden', cursor:'pointer',
+                  }}>
+                    <div style={{ position:'absolute', top:-24, right:-24, width:90, height:90, borderRadius:'50%', background:'rgba(255,255,255,0.1)', pointerEvents:'none' }}/>
+                    <div style={{ fontSize:15, fontWeight:700, color:'white', marginBottom:2 }}>{a.name}</div>
+                    <div style={{ fontSize:11, color:'rgba(255,255,255,0.65)', fontWeight:500, marginBottom:18, letterSpacing:0.4 }}>{a.currency}</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:'white', letterSpacing:'-0.5px' }}>${$(a.balance)}</div>
+                  </div>
+                );
+              })
+          }
+        </div>
       </div>
 
-      {/* ── Transaction list ──────────────────────────────────────────────── */}
-      <div style={{ padding: '0 16px 140px' }}>
-        {loading ? (
-          <div style={{ textAlign: 'center', color: T.textSec, padding: 56, fontSize: 15 }}>Loading…</div>
-        ) : shown.length === 0 ? (
-          <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>💸</div>
-            <div style={{ fontWeight: 600, fontSize: 16 }}>No transactions yet</div>
-          </div>
-        ) : (
-          <div style={{
-            background: T.bgCard, borderRadius: 20,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.08)', overflow: 'hidden',
-          }}>
-            {shown.slice(0, 30).map((t, i) => (
-              <TxnRow key={t.id} txn={t} index={i} last={i === Math.min(shown.length, 30) - 1}/>
-            ))}
-          </div>
-        )}
+      {/* ── RECENT TRANSACTIONS ──────────────────────────────────────────── */}
+      <div style={{ paddingTop:28, paddingBottom:120 }}>
+        <SectionHeader title="RECENT" action="See all"/>
+        {loading
+          ? <EmptyState icon="⏳" title="Loading…"/>
+          : transactions.length === 0
+            ? <EmptyState icon="💸" title="No transactions yet" sub="Tap + to add your first one"/>
+            : <div style={{ padding:'0 16px' }}>
+                {transactions.slice(0, 25).map((t, i) => <TxnRow key={t.id} t={t} i={i}/>)}
+              </div>
+        }
       </div>
     </div>
   );
 }
 
-/* ─── Transaction row ───────────────────────────────────────────────────── */
-function TxnRow({ txn, index, last }) {
-  const [visible, setVisible] = useState(false);
+/* ── Shared section header ──────────────────────────────────────────────── */
+function SectionHeader({ title, action }) {
+  return (
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'0 22px 13px' }}>
+      <span style={{ fontSize:11, fontWeight:700, color:D.sub, letterSpacing:1.4, textTransform:'uppercase' }}>{title}</span>
+      {action && <span style={{ fontSize:13, fontWeight:600, color:D.purple, cursor:'pointer' }}>{action}</span>}
+    </div>
+  );
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+function EmptyState({ icon, title, sub }) {
+  return (
+    <div style={{ textAlign:'center', padding:'40px 24px' }}>
+      <div style={{ fontSize:42, marginBottom:10 }}>{icon}</div>
+      <div style={{ fontWeight:700, color:D.ink, fontSize:16 }}>{title}</div>
+      {sub && <div style={{ color:D.sub, fontSize:13, marginTop:5 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Transaction row ────────────────────────────────────────────────────── */
+function TxnRow({ t, i }) {
+  const [vis,   setVis]   = useState(false);
   const [hover, setHover] = useState(false);
-  const [flash, setFlash] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setVis(true), i * 55); return () => clearTimeout(id); }, [i]);
 
-  useEffect(() => {
-    const id = setTimeout(() => setVisible(true), index * 80);
-    return () => clearTimeout(id);
-  }, [index]);
-
-  const isExp  = txn.type === 'expense';
-  const isInc  = txn.type === 'income';
-  const icon   = txn.cat_icon || (isExp ? '💸' : isInc ? '💰' : '⇄');
-  const label  = txn.cat_name || txn.note || txn.type;
-  const iconBg = ICON_BG[icon] || '#F3F4F6';
+  const isExp = t.type === 'expense';
+  const isInc = t.type === 'income';
+  const icon  = t.cat_icon || (isExp ? '💸' : isInc ? '💰' : '⇄');
+  const label = t.cat_name || t.note || t.type;
+  const ibg   = IBGS[icon] || '#F3F4F6';
+  const date  = t.date
+    ? new Date(t.date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' })
+    : '';
 
   return (
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onClick={() => { setFlash(true); setTimeout(() => setFlash(false), 500); }}
       style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '14px 20px', height: 60,
-        borderBottom: last ? 'none' : `1px solid #F3F4F6`,
-        cursor: 'pointer',
-        background: flash ? '#D1FEF0' : hover ? '#F0FDF9' : 'transparent',
-        transition: 'background 200ms ease, opacity 220ms ease, transform 220ms ease',
-        opacity:    visible ? 1 : 0,
-        transform:  visible ? 'translateY(0)' : 'translateY(12px)',
-        animation:  visible ? 'slideUp 220ms ease forwards' : 'none',
+        display:'flex', alignItems:'center', gap:13,
+        padding:'12px 14px', borderRadius:18, marginBottom:5,
+        background: hover ? D.card : 'rgba(255,255,255,0.65)',
+        boxShadow: hover ? '0 4px 18px rgba(0,0,0,0.07)' : 'none',
+        cursor:'pointer',
+        opacity: vis ? 1 : 0,
+        transform: vis ? 'translateY(0)' : 'translateY(7px)',
+        transition:'opacity 200ms ease, transform 200ms ease, background 150ms, box-shadow 150ms',
+        animation: vis ? `rowIn 200ms ease both` : 'none',
       }}
     >
       <div style={{
-        width: 44, height: 44, borderRadius: '50%',
-        background: iconBg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 20, flexShrink: 0,
+        width:46, height:46, borderRadius:14, background:ibg, flexShrink:0,
+        display:'flex', alignItems:'center', justifyContent:'center', fontSize:22,
       }}>
         {icon}
       </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 15, fontWeight: 600, color: T.textPrimary,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:D.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
           {label}
         </div>
-        <div style={{ fontSize: 12, color: T.textSec, marginTop: 1 }}>
-          {txn.acct_name || ''}
-          {txn.note && txn.cat_name ? ` · ${txn.note}` : ''}
+        <div style={{ fontSize:11, color:D.sub, marginTop:2 }}>
+          {date}{t.acct_name ? ` · ${t.acct_name}` : ''}
         </div>
       </div>
-
       <div style={{
-        fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap',
-        color: isExp ? T.textExpense : isInc ? T.brand : '#6366F1',
+        fontSize:15, fontWeight:800,
+        color: isExp ? D.red : isInc ? D.green : D.purple,
       }}>
-        {isExp ? '−' : isInc ? '+' : '⇄'}${money(txn.amount)}
+        {isExp ? '−' : isInc ? '+' : ''}${$(t.amount)}
       </div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   SCREEN 2 — ADD TRANSACTION MODAL
-   ════════════════════════════════════════════════════════════════════════ */
-function AddModal({ accounts, categories, onClose, onSuccess }) {
-  const [mounted, setMounted]     = useState(false);
-  const [amount,  setAmount]      = useState('0');
-  const [type,    setType]        = useState('expense');
-  const [catId,   setCatId]       = useState('');
-  const [accId,   setAccId]       = useState(accounts[0]?.id || '');
-  const [toAccId, setToAccId]     = useState('');
-  const [date,    setDate]        = useState(new Date().toISOString().slice(0, 10));
-  const [note,    setNote]        = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [showCatPicker, setShowCatPicker] = useState(false);
-
-  useEffect(() => { const id = setTimeout(() => setMounted(true), 10); return () => clearTimeout(id); }, []);
-
-  const selCat = categories.find(c => c.id === catId);
-  const selAcc = accounts.find(a => a.id === accId);
-
-  /* Numpad input logic */
-  const handleKey = (k) => {
-    if (k === '⌫') {
-      setAmount(prev => prev.length <= 1 ? '0' : prev.slice(0, -1));
-    } else if (k === '.') {
-      setAmount(prev => prev.includes('.') ? prev : prev + '.');
-    } else {
-      setAmount(prev => {
-        if (prev === '0') return k;
-        const parts = prev.split('.');
-        if (parts[1]?.length >= 2) return prev;
-        if (prev.replace('.', '').length >= 9) return prev;
-        return prev + k;
-      });
-    }
-  };
-
-  const handleQuick = (v) => {
-    setAmount(prev => {
-      const n = (parseFloat(prev) || 0) + v;
-      return n % 1 === 0 ? String(n) : n.toFixed(2);
-    });
-  };
-
-  const handleSubmit = async () => {
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0 || !accId) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type, amount: amt,
-          account_id: accId,
-          to_account_id: type === 'transfer' ? toAccId : null,
-          category_id: catId || null,
-          date, note: note || null,
-        }),
-      });
-      if (res.ok) { onSuccess(); onClose(); }
-    } finally { setSubmitting(false); }
-  };
-
-  const relevantCats = categories.filter(c =>
-    type === 'income' ? c.type === 'income' : c.type === 'expense'
-  );
-
-  const dateLabel = (() => {
-    try { return new Date(date + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }); }
-    catch { return date; }
-  })();
-
-  /* Display amount: show raw string cleanly */
-  const displayAmt = (() => {
-    if (amount === '0') return '0';
-    const [int, dec] = amount.split('.');
-    const intFormatted = parseInt(int || '0', 10).toLocaleString('en-US');
-    if (dec === undefined) return intFormatted;
-    return intFormatted + '.' + dec;
-  })();
-
-  const typeColor = type === 'expense' ? '#F97316' : type === 'income' ? T.brand : '#6366F1';
+/* ══════════════════════════════════════════════════════════════════════════
+   TRANSACTIONS SCREEN
+   ══════════════════════════════════════════════════════════════════════════ */
+function TxnsScreen({ transactions, loading }) {
+  const [filter, setFilter] = useState('all');
+  const shown = transactions.filter(t => filter === 'all' || t.type === filter);
 
   return (
-    /* Full-screen overlay with spring slide-up */
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 50,
-      display: 'flex', flexDirection: 'column',
-      background: T.bgCard,
-      borderRadius: '32px 32px 0 0',
-      transform: mounted ? 'translateY(0)' : 'translateY(100%)',
-      transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-    }}>
-      {/* ── Top bar ───────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '20px 20px 8px',
-      }}>
-        <button onClick={onClose} style={{
-          width: 36, height: 36, borderRadius: '50%',
-          background: '#F3F4F6', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <XIcon size={16} color="#6B7280"/>
-        </button>
-        <span style={{ fontSize: 16, fontWeight: 600, color: T.textPrimary }}>Add Transaction</span>
-        <div style={{ width: 36 }}/>
-      </div>
-
-      {/* ── Type tabs ─────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 4 }}>
-        <div style={{ background: '#F3F4F6', borderRadius: 50, padding: 3, display: 'flex' }}>
-          {['expense', 'income', 'transfer'].map(t => (
-            <button key={t} onClick={() => { setType(t); setCatId(''); }} style={{
-              padding: '6px 16px', borderRadius: 50, border: 'none', cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-              background: type === t
-                ? (t === 'expense' ? '#F97316' : t === 'income' ? T.brand : '#6366F1')
-                : 'transparent',
-              color: type === t ? 'white' : T.textSec,
-              transition: 'all 180ms ease',
-            }}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
+    <div style={{ height:'100%', overflowY:'auto', background:D.bg }}>
+      <div style={{ padding:'52px 22px 0' }}>
+        <h1 style={{ fontSize:28, fontWeight:800, color:D.ink, marginBottom:18 }}>Transactions</h1>
+        <div style={{ display:'flex', gap:7, overflowX:'auto', paddingBottom:4, scrollbarWidth:'none' }}>
+          {[['all','All'],['expense','Expenses'],['income','Income'],['transfer','Transfers']].map(([v,l]) => (
+            <button key={v} onClick={() => setFilter(v)} style={{
+              padding:'7px 16px', borderRadius:50, border:'none', cursor:'pointer',
+              fontFamily:'inherit', fontSize:13, fontWeight:600, flexShrink:0,
+              background: filter === v ? D.ink : D.card,
+              color: filter === v ? 'white' : D.body,
+              transition:'all 180ms ease',
+              boxShadow: filter === v ? 'none' : '0 1px 4px rgba(0,0,0,0.06)',
+            }}>{l}</button>
           ))}
         </div>
       </div>
-
-      {/* ── Amount display ────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '10px 24px 6px',
-      }}>
-        <div style={{
-          background: typeColor, color: 'white',
-          borderRadius: 50, padding: '5px 14px',
-          fontSize: 13, fontWeight: 700, flexShrink: 0,
-        }}>
-          {selAcc?.currency || 'USD'}
-        </div>
-        <div style={{
-          flex: 1, display: 'flex', alignItems: 'center',
-          justifyContent: 'flex-end', gap: 3,
-        }}>
-          <span style={{
-            fontSize: 44, fontWeight: 700, color: T.textPrimary,
-            letterSpacing: '-2px', lineHeight: 1,
-          }}>
-            {displayAmt}
-          </span>
-          <span style={{
-            width: 2, height: 44, background: T.brand, borderRadius: 2,
-            animation: 'blink 1s step-end infinite',
-          }}/>
-        </div>
-      </div>
-
-      {/* ── Form rows ─────────────────────────────────────────────────── */}
-      <div style={{
-        margin: '6px 16px', background: T.surface,
-        borderRadius: 20, overflow: 'hidden',
-        border: `1px solid ${T.border}`,
-      }}>
-        {/* Category */}
-        {type !== 'transfer' && (
-          <div onClick={() => setShowCatPicker(true)} style={{
-            display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
-            borderBottom: `1px solid ${T.border}`, cursor: 'pointer',
-            transition: 'background 150ms',
-          }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: selCat?.color || '#E5E7EB',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-            }}>
-              {selCat?.icon || '🏷️'}
-            </div>
-            <span style={{
-              flex: 1, fontSize: 15, fontWeight: 500,
-              color: selCat ? T.textPrimary : T.textSec,
-            }}>
-              {selCat?.name || 'Category'}
-            </span>
-            <ChevronIcon size={16} color={T.textSec}/>
-          </div>
-        )}
-
-        {/* Account */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
-          borderBottom: type === 'transfer' ? `1px solid ${T.border}` : `1px solid ${T.border}`,
-          position: 'relative',
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%', background: T.dark,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <WalletIcon size={16} color="white"/>
-          </div>
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: T.textPrimary }}>
-            {selAcc ? `${selAcc.name} (${selAcc.currency})` : 'Account'}
-          </span>
-          <select value={accId} onChange={e => setAccId(e.target.value)} style={{
-            position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%',
-          }}>
-            {accounts.map(a => (
-              <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
-            ))}
-          </select>
-          <ChevronIcon size={16} color={T.textSec}/>
-        </div>
-
-        {/* To Account (transfer only) */}
-        {type === 'transfer' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
-            borderBottom: `1px solid ${T.border}`, position: 'relative',
-          }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%', background: '#6366F1',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <RecurIcon size={16} color="white"/>
-            </div>
-            <span style={{
-              flex: 1, fontSize: 15, fontWeight: 500,
-              color: toAccId ? T.textPrimary : T.textSec,
-            }}>
-              {accounts.find(a => a.id === toAccId)?.name || 'To Account'}
-            </span>
-            <select value={toAccId} onChange={e => setToAccId(e.target.value)} style={{
-              position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%',
-            }}>
-              <option value="">Select…</option>
-              {accounts.filter(a => a.id !== accId).map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-            <ChevronIcon size={16} color={T.textSec}/>
-          </div>
-        )}
-
-        {/* Date */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
-          borderBottom: `1px solid ${T.border}`, position: 'relative',
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%', background: T.dark,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <CalendarIcon size={16} color="white"/>
-          </div>
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: T.textPrimary }}>{dateLabel}</span>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }}/>
-          <ChevronIcon size={16} color={T.textSec}/>
-        </div>
-
-        {/* Notes */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: '50%', background: T.dark,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <NotesIcon size={16} color="white"/>
-          </div>
-          <input
-            type="text" value={note} onChange={e => setNote(e.target.value)}
-            placeholder="Notes"
-            style={{
-              flex: 1, background: 'none', border: 'none', outline: 'none',
-              fontSize: 15, fontWeight: 500, fontFamily: 'inherit',
-              color: T.textPrimary,
-            }}
-          />
-        </div>
-      </div>
-
-      {/* ── Quick amount pills ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 8, padding: '8px 16px' }}>
-        {[4.99, 9.99, 19.99].map(v => (
-          <QuickPill key={v} value={v} onClick={() => handleQuick(v)}/>
-        ))}
-      </div>
-
-      {/* ── Numpad ───────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 8, flex: 1, padding: '0 16px 20px', minHeight: 0 }}>
-        {/* 3-col digit grid */}
-        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: 'repeat(4, 1fr)', gap: 8 }}>
-          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-            <NumKey key={k} onPress={() => handleKey(k)}>
-              {k === '⌫' ? <DeleteIcon size={19} color={T.textPrimary}/> : k}
-            </NumKey>
-          ))}
-        </div>
-        {/* Confirm button — full-height right column */}
-        <ConfirmKey onPress={handleSubmit} disabled={submitting}/>
-      </div>
-
-      {/* ── Category picker overlay ───────────────────────────────────── */}
-      {showCatPicker && (
-        <div style={{
-          position: 'absolute', inset: 0, background: 'white', zIndex: 10,
-          borderRadius: '32px 32px 0 0', overflowY: 'auto', padding: 20,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <button onClick={() => setShowCatPicker(false)} style={{
-              background: '#F3F4F6', border: 'none', borderRadius: '50%',
-              width: 36, height: 36, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <XIcon size={16} color="#6B7280"/>
-            </button>
-            <span style={{ fontWeight: 600, fontSize: 16 }}>Select Category</span>
-          </div>
-
-          {relevantCats.map(c => (
-            <div key={c.id} onClick={() => { setCatId(c.id); setShowCatPicker(false); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 14,
-                padding: '14px 12px', borderRadius: 14, cursor: 'pointer',
-                marginBottom: 4,
-                background: catId === c.id ? '#E6FAF4' : 'transparent',
-                transition: 'background 150ms',
-              }}
-            >
-              <div style={{
-                width: 40, height: 40, borderRadius: '50%',
-                background: c.color || '#E5E7EB',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
-              }}>
-                {c.icon}
-              </div>
-              <span style={{ fontSize: 15, fontWeight: 600, color: T.textPrimary, flex: 1 }}>{c.name}</span>
-              {catId === c.id && <span style={{ color: T.brand, fontWeight: 700, fontSize: 18 }}>✓</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Numpad key ────────────────────────────────────────────────────────── */
-function NumKey({ children, onPress }) {
-  const [pressed, setPressed] = useState(false);
-  const press   = () => setPressed(true);
-  const release = () => { setPressed(false); onPress?.(); };
-  return (
-    <div
-      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setPressed(false)}
-      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
-      style={{
-        background: pressed ? '#E6FAF4' : T.bgCard,
-        borderRadius: 8,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', fontSize: 22, fontWeight: 500, color: T.textPrimary,
-        userSelect: 'none',
-        transform: pressed ? 'scale(0.94)' : 'scale(1)',
-        transition: 'transform 80ms ease, background 80ms ease',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/* ─── Confirm (enter) key ───────────────────────────────────────────────── */
-function ConfirmKey({ onPress, disabled }) {
-  const [pressed, setPressed] = useState(false);
-  const press   = () => setPressed(true);
-  const release = () => { setPressed(false); if (!disabled) onPress?.(); };
-  return (
-    <div
-      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setPressed(false)}
-      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
-      style={{
-        width: 64,
-        background: pressed ? T.brandDark : T.brand,
-        borderRadius: 14,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transform: pressed ? 'scale(0.94)' : 'scale(1)',
-        transition: 'transform 80ms ease, background 80ms ease',
-        boxShadow: '0 4px 16px rgba(0,200,150,0.35)',
-        flexShrink: 0,
-      }}
-    >
-      <EnterIcon size={26} color="white"/>
-    </div>
-  );
-}
-
-/* ─── Quick amount pill ─────────────────────────────────────────────────── */
-function QuickPill({ value, onClick }) {
-  const [active, setActive] = useState(false);
-  const [ripple, setRipple] = useState(false);
-  const press   = () => { setActive(true); setRipple(false); };
-  const release = () => {
-    setActive(false); setRipple(true);
-    onClick?.();
-    setTimeout(() => setRipple(false), 500);
-  };
-  return (
-    <button
-      onMouseDown={press} onMouseUp={release} onMouseLeave={() => setActive(false)}
-      onTouchStart={press} onTouchEnd={e => { e.preventDefault(); release(); }}
-      style={{
-        flex: 1, padding: '8px 0', borderRadius: 50, border: 'none',
-        background: active ? T.brand : '#F3F4F6',
-        color: active ? 'white' : T.textPrimary,
-        fontSize: 14, fontWeight: 600, cursor: 'pointer',
-        fontFamily: 'inherit', transition: 'all 150ms ease',
-        position: 'relative', overflow: 'hidden',
-      }}
-    >
-      {ripple && (
-        <span style={{
-          position: 'absolute', inset: 0, background: 'rgba(0,200,150,0.3)',
-          borderRadius: '50%', animation: 'rippleOut 500ms ease forwards',
-          pointerEvents: 'none',
-        }}/>
-      )}
-      {value.toFixed(2)}
-    </button>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   SCREEN — STATS
-   ════════════════════════════════════════════════════════════════════════ */
-function StatsScreen({ transactions }) {
-  const [stats, setStats] = useState(null);
-
-  useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {});
-  }, [transactions]);
-
-  const now = new Date();
-  const label = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-  const byCat   = stats?.by_category || [];
-  const bar     = stats?.bar || [];
-  const catTotal = byCat.reduce((s, c) => s + c.total, 0);
-
-  return (
-    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none', padding: '52px 20px 140px' }}>
-      <div style={{ fontWeight: 700, fontSize: 22, color: T.textPrimary, marginBottom: 4 }}>Statistics</div>
-      <div style={{ color: T.textSec, fontSize: 14, marginBottom: 24 }}>{label}</div>
-
-      {/* Donut */}
-      <div style={{ background: T.bgCard, borderRadius: 20, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.08)', marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary, marginBottom: 20 }}>Expenses by Category</div>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-          <div style={{ position: 'relative', width: 150, height: 150 }}>
-            <svg viewBox="0 0 100 100" width="150" height="150" style={{ transform: 'rotate(-90deg)' }}>
-              {byCat.length > 0
-                ? byCat.reduce((acc, d, i) => {
-                    const pct  = catTotal ? d.total / catTotal : 0;
-                    const circ = 2 * Math.PI * 35;
-                    acc.circles.push(
-                      <circle key={d.name} cx="50" cy="50" r="35"
-                        fill="none"
-                        stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                        strokeWidth="18"
-                        strokeDasharray={`${pct * circ} ${circ * (1 - pct)}`}
-                        strokeDashoffset={-acc.offset * circ}
-                      />
-                    );
-                    acc.offset += pct;
-                    return acc;
-                  }, { offset: 0, circles: [] }).circles
-                : <circle cx="50" cy="50" r="35" fill="none" stroke="#E5E7EB" strokeWidth="18"/>
-              }
-              <circle cx="50" cy="50" r="26" fill="white"/>
-            </svg>
-            <div style={{
-              position: 'absolute', inset: 0,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <div style={{ fontSize: 11, color: T.textSec, fontWeight: 500 }}>Total</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: T.textPrimary }}>${catTotal.toFixed(0)}</div>
-            </div>
-          </div>
-        </div>
-
-        {byCat.length === 0
-          ? <div style={{ textAlign: 'center', color: T.textSec, padding: 16 }}>No expense data this month</div>
-          : byCat.map((d, i) => (
-            <div key={d.name} style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
-            }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }}/>
-              <div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: T.textPrimary }}>{d.name}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.textExpense }}>${d.total.toFixed(2)}</div>
-              <div style={{ fontSize: 12, color: T.textSec, width: 34, textAlign: 'right' }}>
-                {catTotal ? Math.round(d.total / catTotal * 100) : 0}%
-              </div>
-            </div>
-          ))
+      <div style={{ padding:'16px 16px 120px' }}>
+        {loading
+          ? <EmptyState icon="⏳" title="Loading…"/>
+          : shown.length === 0
+            ? <EmptyState icon="📭" title="Nothing here"/>
+            : shown.map((t, i) => <TxnRow key={t.id} t={t} i={i}/>)
         }
       </div>
-
-      {/* Bar chart (6 months) */}
-      <div style={{ background: T.bgCard, borderRadius: 20, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
-        <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary, marginBottom: 16 }}>Income vs Expenses</div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
-          {bar.map(b => {
-            const maxVal = Math.max(...bar.map(x => Math.max(x.income, x.expense)), 1);
-            const ih = Math.round((b.income  / maxVal) * 90);
-            const eh = Math.round((b.expense / maxVal) * 90);
-            return (
-              <div key={b.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 90 }}>
-                  <div style={{ width: '44%', height: ih, background: '#00C89688', borderRadius: '4px 4px 0 0', minHeight: 2 }}/>
-                  <div style={{ width: '44%', height: eh, background: '#F9731688', borderRadius: '4px 4px 0 0', minHeight: 2 }}/>
-                </div>
-                <div style={{ fontSize: 9, color: T.textSec, fontWeight: 500 }}>{b.month.slice(5)}</div>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-          <span style={{ fontSize: 12, color: T.textSec, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#00C89688' }}/>Income
-          </span>
-          <span style={{ fontSize: 12, color: T.textSec, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#F9731688' }}/>Expenses
-          </span>
-        </div>
-      </div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   SCREEN — BUDGETS
-   ════════════════════════════════════════════════════════════════════════ */
-function BudgetsScreen() {
-  const [items, setItems] = useState([]);
+/* ══════════════════════════════════════════════════════════════════════════
+   BUDGET SCREEN
+   ══════════════════════════════════════════════════════════════════════════ */
+function BudgetScreen() {
+  const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     fetch('/api/budgets').then(r => r.json()).then(d => { setItems(d); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  const now = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const now = new Date().toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  const wb = items.filter(b => b.budget_amount);
+  const totBudget = wb.reduce((s, b) => s + (b.budget_amount || 0), 0);
+  const totSpent  = wb.reduce((s, b) => s + (b.spent || 0), 0);
+  const overallPct = totBudget ? Math.min((totSpent / totBudget) * 100, 100) : 0;
+  const overallR = 34;
+  const overallCirc = 2 * Math.PI * overallR;
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: T.bgApp, scrollbarWidth: 'none', padding: '52px 20px 140px' }}>
-      <div style={{ fontWeight: 700, fontSize: 22, color: T.textPrimary, marginBottom: 4 }}>Budgets</div>
-      <div style={{ color: T.textSec, fontSize: 14, marginBottom: 24 }}>{now}</div>
+    <div style={{ height:'100%', overflowY:'auto', background:D.bg }}>
+      <div style={{ padding:'52px 22px 0' }}>
+        <h1 style={{ fontSize:28, fontWeight:800, color:D.ink }}>Budget</h1>
+        <p style={{ fontSize:13, color:D.sub, marginTop:3, marginBottom:24 }}>{now}</p>
 
-      {loading ? (
-        <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>Loading…</div>
-      ) : items.filter(b => b.budget_amount).length === 0 ? (
-        <div style={{ textAlign: 'center', color: T.textSec, padding: 56 }}>
-          <div style={{ fontSize: 44, marginBottom: 12 }}>📊</div>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>No budgets set</div>
-          <div style={{ fontSize: 13, marginTop: 8 }}>Set budgets from the Budgets page</div>
-        </div>
-      ) : (
-        items.filter(b => b.budget_amount).map(b => {
-          const pct  = b.budget_amount ? Math.min((b.spent / b.budget_amount) * 100, 100) : 0;
-          const over = pct >= 100;
-          const warn = pct >= 75;
-          const barColor = over ? '#EF4444' : warn ? '#F59E0B' : T.brand;
-          return (
-            <div key={b.id} style={{
-              background: T.bgCard, borderRadius: 20, padding: 20,
-              marginBottom: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%',
-                  background: b.color || '#E5E7EB',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
-                }}>
-                  {b.icon || '💰'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: T.textPrimary }}>{b.name}</div>
-                  <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>
-                    ${b.spent?.toFixed(2)} spent of ${b.budget_amount?.toFixed(2)}
-                  </div>
-                </div>
-                <div style={{
-                  fontSize: 14, fontWeight: 700,
-                  color: over ? '#EF4444' : T.brand,
-                }}>
-                  {Math.round(pct)}%
-                </div>
+        {/* ── overall ring card ── */}
+        {wb.length > 0 && (
+          <div style={{ background:D.card, borderRadius:24, padding:22, boxShadow:'0 4px 20px rgba(0,0,0,0.06)', marginBottom:22, display:'flex', alignItems:'center', gap:20 }}>
+            <div style={{ position:'relative', flexShrink:0, width:84, height:84 }}>
+              <svg width="84" height="84" viewBox="0 0 84 84">
+                <circle cx="42" cy="42" r={overallR} fill="none" stroke={D.border} strokeWidth="10"/>
+                <circle cx="42" cy="42" r={overallR} fill="none"
+                  stroke={overallPct >= 100 ? D.red : overallPct >= 75 ? '#F59E0B' : D.purple}
+                  strokeWidth="10"
+                  strokeDasharray={`${(overallPct / 100) * overallCirc} ${overallCirc}`}
+                  strokeDashoffset={overallCirc * 0.25}
+                  strokeLinecap="round"/>
+              </svg>
+              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontSize:14, fontWeight:800, color:D.ink }}>{Math.round(overallPct)}%</span>
               </div>
-              <div style={{ background: '#F3F4F6', borderRadius: 999, height: 8, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', borderRadius: 999,
-                  width: `${pct}%`,
-                  background: barColor,
-                  transition: 'width 0.5s ease',
-                }}/>
-              </div>
-              {over && (
-                <div style={{ fontSize: 12, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>
-                  Over budget!
-                </div>
-              )}
             </div>
-          );
-        })
+            <div>
+              <p style={{ fontSize:13, color:D.sub, fontWeight:500 }}>Total Spent</p>
+              <p style={{ fontSize:24, fontWeight:800, color:D.ink, letterSpacing:'-1px', marginTop:2 }}>${$(totSpent)}</p>
+              <p style={{ fontSize:12, color:D.sub, marginTop:3 }}>of ${$(totBudget)} budgeted</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding:'0 22px 120px' }}>
+        {loading
+          ? <EmptyState icon="⏳" title="Loading…"/>
+          : wb.length === 0
+            ? <EmptyState icon="📊" title="No budgets set" sub="Configure budgets from the web interface"/>
+            : wb.map((b, i) => {
+                const pct    = b.budget_amount ? Math.min((b.spent / b.budget_amount) * 100, 100) : 0;
+                const over   = pct >= 100;
+                const warn   = pct >= 75;
+                const barClr = over ? D.red : warn ? '#F59E0B' : D.purple;
+                const left   = (b.budget_amount || 0) - (b.spent || 0);
+                return (
+                  <div key={b.id} style={{
+                    background:D.card, borderRadius:22, padding:'18px 20px',
+                    marginBottom:10, boxShadow:'0 2px 12px rgba(0,0,0,0.05)',
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+                      <div style={{ width:46, height:46, borderRadius:14, background:IBGS[b.icon]||'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0 }}>
+                        {b.icon || '💰'}
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:15, color:D.ink }}>{b.name}</div>
+                        <div style={{ fontSize:12, color:D.sub, marginTop:2 }}>
+                          ${$(b.spent)} spent · ${$(b.budget_amount)} budget
+                        </div>
+                      </div>
+                      <div style={{ textAlign:'right' }}>
+                        <div style={{ fontSize:14, fontWeight:800, color: over ? D.red : D.ink }}>
+                          {over ? 'Over!' : `$${$(Math.max(left,0))}`}
+                        </div>
+                        <div style={{ fontSize:11, color:D.sub, marginTop:1 }}>left</div>
+                      </div>
+                    </div>
+                    <div style={{ background:D.border, borderRadius:99, height:7, overflow:'hidden' }}>
+                      <div style={{ height:'100%', borderRadius:99, width:`${pct}%`, background:barClr, transition:'width 0.6s ease' }}/>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginTop:7 }}>
+                      <span style={{ fontSize:11, color:D.sub, fontWeight:500 }}>{Math.round(pct)}% used</span>
+                      {over && <span style={{ fontSize:11, fontWeight:700, color:D.red }}>OVER BUDGET</span>}
+                    </div>
+                  </div>
+                );
+              })
+        }
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STATS SCREEN
+   ══════════════════════════════════════════════════════════════════════════ */
+function StatsScreen({ transactions }) {
+  const [stats, setStats] = useState(null);
+  useEffect(() => {
+    fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => {});
+  }, [transactions.length]);
+
+  const byCat    = stats?.by_category || [];
+  const bar      = stats?.bar || [];
+  const catTotal = byCat.reduce((s, c) => s + (c.total || 0), 0);
+  const now      = new Date().toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  const maxBar   = Math.max(...bar.map(b => Math.max(b.income || 0, b.expense || 0)), 1);
+
+  return (
+    <div style={{ height:'100%', overflowY:'auto', background:D.bg }}>
+      <div style={{ padding:'52px 22px 0' }}>
+        <h1 style={{ fontSize:28, fontWeight:800, color:D.ink }}>Statistics</h1>
+        <p style={{ fontSize:13, color:D.sub, marginTop:3, marginBottom:24 }}>{now}</p>
+      </div>
+
+      <div style={{ padding:'0 22px 120px' }}>
+        {/* ── donut card ── */}
+        <div style={{ background:D.card, borderRadius:24, padding:22, boxShadow:'0 4px 20px rgba(0,0,0,0.06)', marginBottom:14 }}>
+          <p style={{ fontWeight:700, fontSize:15, color:D.ink, marginBottom:20 }}>Expenses by Category</p>
+          <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+            <div style={{ position:'relative', flexShrink:0 }}>
+              <svg viewBox="0 0 120 120" width="120" height="120" style={{ transform:'rotate(-90deg)' }}>
+                {byCat.length > 0
+                  ? byCat.reduce((acc, d, i) => {
+                      const pct  = catTotal ? d.total / catTotal : 0;
+                      const circ = 2 * Math.PI * 46;
+                      acc.nodes.push(
+                        <circle key={d.name} cx="60" cy="60" r="46"
+                          fill="none" stroke={PIE_C[i % PIE_C.length]}
+                          strokeWidth="22"
+                          strokeDasharray={`${pct * circ} ${circ}`}
+                          strokeDashoffset={-acc.off * circ}/>
+                      );
+                      acc.off += pct;
+                      return acc;
+                    }, { off:0, nodes:[] }).nodes
+                  : <circle cx="60" cy="60" r="46" fill="none" stroke={D.border} strokeWidth="22"/>
+                }
+                <circle cx="60" cy="60" r="35" fill="white"/>
+              </svg>
+              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontSize:10, color:D.sub, fontWeight:600, letterSpacing:0.5 }}>TOTAL</span>
+                <span style={{ fontSize:15, fontWeight:800, color:D.ink }}>
+                  {catTotal >= 1000 ? `$${(catTotal/1000).toFixed(1)}k` : `$${catTotal.toFixed(0)}`}
+                </span>
+              </div>
+            </div>
+            <div style={{ flex:1 }}>
+              {byCat.length === 0
+                ? <p style={{ fontSize:13, color:D.sub }}>No expense data this month.</p>
+                : byCat.slice(0, 5).map((d, i) => (
+                    <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
+                      <div style={{ width:9, height:9, borderRadius:'50%', background:PIE_C[i%PIE_C.length], flexShrink:0 }}/>
+                      <div style={{ flex:1, fontSize:12, fontWeight:500, color:D.body, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:D.ink }}>{catTotal ? Math.round(d.total/catTotal*100) : 0}%</div>
+                    </div>
+                  ))
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* ── bar card ── */}
+        <div style={{ background:D.card, borderRadius:24, padding:22, boxShadow:'0 4px 20px rgba(0,0,0,0.06)' }}>
+          <p style={{ fontWeight:700, fontSize:15, color:D.ink, marginBottom:3 }}>Cash Flow</p>
+          <p style={{ fontSize:12, color:D.sub, marginBottom:20 }}>Last 6 months</p>
+          <div style={{ display:'flex', alignItems:'flex-end', gap:8, height:110 }}>
+            {bar.map(b => {
+              const ih = maxBar ? Math.round((b.income  || 0) / maxBar * 98) : 0;
+              const eh = maxBar ? Math.round((b.expense || 0) / maxBar * 98) : 0;
+              return (
+                <div key={b.month} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                  <div style={{ display:'flex', alignItems:'flex-end', gap:2, height:100 }}>
+                    <div style={{ width:'46%', height:ih || 3, minHeight:3, background:`linear-gradient(to top,${D.h1},${D.h2})`, borderRadius:'4px 4px 0 0' }}/>
+                    <div style={{ width:'46%', height:eh || 3, minHeight:3, background:'linear-gradient(to top,#DC2626,#EF4444)', borderRadius:'4px 4px 0 0' }}/>
+                  </div>
+                  <div style={{ fontSize:9, color:D.sub, fontWeight:600 }}>{b.month.slice(5)}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display:'flex', gap:18, marginTop:12 }}>
+            <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:D.body }}>
+              <span style={{ width:10, height:10, borderRadius:3, background:D.purple, display:'inline-block' }}/>Income
+            </span>
+            <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:D.body }}>
+              <span style={{ width:10, height:10, borderRadius:3, background:D.red, display:'inline-block' }}/>Expenses
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ADD TRANSACTION MODAL
+   ══════════════════════════════════════════════════════════════════════════ */
+function AddModal({ accounts, categories, onClose, onSuccess }) {
+  const [on,     setOn]     = useState(false);
+  const [amt,    setAmt]    = useState('0');
+  const [type,   setType]   = useState('expense');
+  const [catId,  setCatId]  = useState('');
+  const [accId,  setAccId]  = useState(accounts[0]?.id || '');
+  const [toAcc,  setToAcc]  = useState('');
+  const [date,   setDate]   = useState(new Date().toISOString().slice(0,10));
+  const [note,   setNote]   = useState('');
+  const [busy,   setBusy]   = useState(false);
+  const [picker, setPicker] = useState(false);
+
+  useEffect(() => { const id = setTimeout(() => setOn(true), 10); return () => clearTimeout(id); }, []);
+
+  const selCat  = categories.find(c => c.id === catId);
+  const selAcc  = accounts.find(a => a.id === accId);
+  const selToAcc = accounts.find(a => a.id === toAcc);
+
+  const key = k => {
+    if (k === '⌫') { setAmt(p => p.length <= 1 ? '0' : p.slice(0,-1)); return; }
+    if (k === '.') { setAmt(p => p.includes('.') ? p : p + '.'); return; }
+    setAmt(p => {
+      if (p === '0') return k;
+      const pts = p.split('.');
+      if (pts[1]?.length >= 2) return p;
+      if (p.replace('.','').length >= 9) return p;
+      return p + k;
+    });
+  };
+
+  const quick = v => setAmt(p => {
+    const n = (parseFloat(p) || 0) + v;
+    return n % 1 === 0 ? String(n) : n.toFixed(2);
+  });
+
+  const submit = async () => {
+    const a = parseFloat(amt);
+    if (!a || !accId) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/transactions', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ type, amount:a, account_id:accId, to_account_id:type==='transfer'?toAcc:null, category_id:catId||null, date, note:note||null }),
+      });
+      if (r.ok) { onSuccess(); onClose(); }
+    } finally { setBusy(false); }
+  };
+
+  const relCats = categories.filter(c => type === 'income' ? c.type === 'income' : c.type === 'expense');
+  const typeClr = type === 'expense' ? D.red : type === 'income' ? D.green : D.purple;
+  const display = (() => {
+    const [i, d] = amt.split('.');
+    const fi = parseInt(i||'0',10).toLocaleString('en-US');
+    return d === undefined ? fi : `${fi}.${d}`;
+  })();
+  const dtLabel = (() => {
+    try { return new Date(date+'T00:00:00').toLocaleDateString('en-US',{day:'numeric',month:'long',year:'numeric'}); }
+    catch { return date; }
+  })();
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, zIndex:100,
+      display:'flex', flexDirection:'column',
+      background:'#FAFBFD', borderRadius:'28px 28px 0 0',
+      transform: on ? 'translateY(0)' : 'translateY(100%)',
+      transition:'transform 320ms cubic-bezier(0.34,1.56,0.64,1)',
+    }}>
+      {/* drag handle */}
+      <div style={{ display:'flex', justifyContent:'center', paddingTop:12 }}>
+        <div style={{ width:38, height:4, borderRadius:2, background:D.faint }}/>
+      </div>
+
+      {/* header */}
+      <div style={{ display:'flex', alignItems:'center', padding:'10px 20px 8px' }}>
+        <button onClick={onClose} style={{ width:36, height:36, borderRadius:'50%', background:'#F3F4F6', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <IcoX s={15} c={D.body}/>
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontSize:16, fontWeight:700, color:D.ink }}>New Transaction</div>
+        <div style={{ width:36 }}/>
+      </div>
+
+      {/* type selector */}
+      <div style={{ display:'flex', justifyContent:'center', marginBottom:2 }}>
+        <div style={{ display:'flex', background:'#EDEFF4', borderRadius:50, padding:3, gap:2 }}>
+          {['expense','income','transfer'].map(t => (
+            <button key={t} onClick={() => { setType(t); setCatId(''); }} style={{
+              padding:'7px 17px', borderRadius:50, border:'none', cursor:'pointer',
+              fontFamily:'inherit', fontSize:13, fontWeight:600,
+              background: type === t ? (t==='expense'?D.red:t==='income'?D.green:D.purple) : 'transparent',
+              color: type === t ? 'white' : D.sub,
+              transition:'all 160ms ease',
+            }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* amount */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'14px 24px 10px', gap:10 }}>
+        <div style={{ background:typeClr, color:'white', borderRadius:50, padding:'4px 14px', fontSize:12, fontWeight:700, flexShrink:0 }}>
+          {selAcc?.currency || 'USD'}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+          <span style={{ fontSize:42, fontWeight:800, color:D.ink, letterSpacing:'-2px', lineHeight:1 }}>{display}</span>
+          <span style={{ display:'inline-block', width:3, height:40, background:typeClr, borderRadius:2, animation:'blink 1s step-end infinite' }}/>
+        </div>
+      </div>
+
+      {/* form rows */}
+      <div style={{ margin:'0 16px', background:D.card, borderRadius:20, overflow:'hidden', boxShadow:'0 2px 14px rgba(0,0,0,0.06)' }}>
+        {type !== 'transfer' && (
+          <FRow iconNode={<span style={{fontSize:18}}>{selCat?.icon||'🏷️'}</span>} ibg={selCat?.color||'#F3F4F6'}
+                label={selCat?.name||'Category'} dim={!selCat} onClick={() => setPicker(true)}/>
+        )}
+        <FRow iconNode={<IcoWallet s={15} c="white"/>} ibg={D.purple}
+              label={selAcc ? `${selAcc.name} · ${selAcc.currency}` : 'Account'}
+              overlay={
+                <select value={accId} onChange={e => setAccId(e.target.value)}
+                  style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%'}}>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}
+                </select>
+              }/>
+        {type === 'transfer' && (
+          <FRow iconNode={<IcoSwap s={15} c="white"/>} ibg="#4338CA"
+                label={selToAcc ? `To: ${selToAcc.name}` : 'To Account'} dim={!selToAcc}
+                overlay={
+                  <select value={toAcc} onChange={e => setToAcc(e.target.value)}
+                    style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%'}}>
+                    <option value="">Select…</option>
+                    {accounts.filter(a => a.id !== accId).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                }/>
+        )}
+        <FRow iconNode={<IcoCal s={15} c="white"/>} ibg={D.body}
+              label={dtLabel}
+              overlay={<input type="date" value={date} onChange={e=>setDate(e.target.value)}
+                style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%'}}/>}/>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 18px' }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:D.faint, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoNote s={15} c={D.body}/>
+          </div>
+          <input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Add a note…"
+            style={{ flex:1, background:'none', border:'none', outline:'none', fontSize:14, fontWeight:500, fontFamily:'inherit', color:D.ink }}/>
+        </div>
+      </div>
+
+      {/* quick amounts */}
+      <div style={{ display:'flex', gap:8, padding:'9px 16px' }}>
+        {[5,10,20,50].map(v => <QuickPill key={v} v={v} color={typeClr} onClick={() => quick(v)}/>)}
+      </div>
+
+      {/* numpad */}
+      <div style={{ flex:1, display:'flex', gap:8, padding:'0 16px 20px', minHeight:0 }}>
+        <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gridTemplateRows:'repeat(4,1fr)', gap:8 }}>
+          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+            <NKey key={k} color={typeClr} onPress={() => key(k)}>
+              {k === '⌫' ? <IcoDel s={17} c={D.ink}/> : k}
+            </NKey>
+          ))}
+        </div>
+        <CKey color={typeClr} onPress={submit} disabled={busy}/>
+      </div>
+
+      {/* category picker */}
+      {picker && (
+        <div style={{ position:'absolute', inset:0, background:D.card, zIndex:10, borderRadius:'28px 28px 0 0', overflowY:'auto' }}>
+          <div style={{ padding:'18px 20px 14px', display:'flex', alignItems:'center', gap:12, borderBottom:`1px solid ${D.border}` }}>
+            <button onClick={() => setPicker(false)} style={{ width:36, height:36, borderRadius:'50%', background:'#F3F4F6', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <IcoX s={15} c={D.body}/>
+            </button>
+            <span style={{ fontWeight:700, fontSize:16, color:D.ink }}>Category</span>
+          </div>
+          <div style={{ padding:'12px 16px 40px' }}>
+            {relCats.length === 0
+              ? <EmptyState icon="🏷️" title={`No ${type} categories`}/>
+              : relCats.map(c => (
+                  <div key={c.id} onClick={() => { setCatId(c.id); setPicker(false); }}
+                    style={{
+                      display:'flex', alignItems:'center', gap:14,
+                      padding:'13px 14px', borderRadius:16, marginBottom:4,
+                      background: catId === c.id ? D.purpleSoft : 'transparent',
+                      cursor:'pointer', transition:'background 120ms',
+                    }}>
+                    <div style={{ width:44, height:44, borderRadius:14, background:IBGS[c.icon]||'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0 }}>
+                      {c.icon}
+                    </div>
+                    <span style={{ fontSize:15, fontWeight:600, color:D.ink, flex:1 }}>{c.name}</span>
+                    {catId === c.id && <span style={{ color:D.purple, fontWeight:700, fontSize:18 }}>✓</span>}
+                  </div>
+                ))
+            }
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
+/* ── Form row ────────────────────────────────────────────────────────────── */
+function FRow({ iconNode, ibg, label, dim, onClick, overlay }) {
+  return (
+    <div onClick={onClick} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 18px', borderBottom:`1px solid ${D.border}`, cursor:'pointer', position:'relative' }}>
+      <div style={{ width:36, height:36, borderRadius:10, background:ibg||'#F3F4F6', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>
+        {iconNode}
+      </div>
+      <span style={{ flex:1, fontSize:14, fontWeight:500, color:dim?D.sub:D.ink }}>{label}</span>
+      <IcoChev s={15} c={D.faint}/>
+      {overlay}
+    </div>
+  );
+}
+
+/* ── Numpad key ──────────────────────────────────────────────────────────── */
+function NKey({ children, onPress, color }) {
+  const [p, sp] = useState(false);
+  return (
+    <div
+      onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); onPress?.(); }} onMouseLeave={() => sp(false)}
+      onTouchStart={() => sp(true)} onTouchEnd={e => { e.preventDefault(); sp(false); onPress?.(); }}
+      style={{
+        background: p ? '#EDE9FE' : D.card,
+        borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center',
+        cursor:'pointer', fontSize:20, fontWeight:700, color:D.ink, userSelect:'none',
+        transform: p ? 'scale(0.92)' : 'scale(1)',
+        transition:'transform 65ms ease, background 65ms ease',
+        boxShadow:'0 2px 8px rgba(0,0,0,0.05)',
+      }}
+    >{children}</div>
+  );
+}
+
+/* ── Confirm key ─────────────────────────────────────────────────────────── */
+function CKey({ onPress, disabled, color }) {
+  const [p, sp] = useState(false);
+  return (
+    <div
+      onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); if (!disabled) onPress?.(); }} onMouseLeave={() => sp(false)}
+      onTouchStart={() => sp(true)} onTouchEnd={e => { e.preventDefault(); sp(false); if (!disabled) onPress?.(); }}
+      style={{
+        width:64, background: p ? `${color}CC` : color,
+        borderRadius:18, display:'flex', alignItems:'center', justifyContent:'center',
+        cursor:disabled?'not-allowed':'pointer',
+        transform: p ? 'scale(0.93)' : 'scale(1)',
+        transition:'transform 65ms ease, background 65ms ease',
+        boxShadow:`0 6px 22px ${color}55`,
+        flexShrink:0,
+      }}
+    ><IcoEnter s={26} c="white"/></div>
+  );
+}
+
+/* ── Quick pill ──────────────────────────────────────────────────────────── */
+function QuickPill({ v, onClick, color }) {
+  const [p, sp] = useState(false);
+  return (
+    <button
+      onMouseDown={() => sp(true)} onMouseUp={() => { sp(false); onClick(); }} onMouseLeave={() => sp(false)}
+      style={{
+        flex:1, padding:'7px 0', borderRadius:50,
+        border: p ? `1.5px solid ${color}` : `1.5px solid ${D.faint}`,
+        background: p ? color : D.card,
+        color: p ? 'white' : D.body,
+        fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+        transition:'all 120ms ease',
+      }}
+    >+{v}</button>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    BOTTOM NAV
-   ════════════════════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════════════════════ */
 function BottomNav({ active, setActive, onAdd }) {
   const tabs = [
-    { id: 'dashboard', Icon: WalletIcon, label: 'Home'   },
-    { id: 'stats',     Icon: PieIcon,    label: 'Stats'  },
-    { id: 'budgets',   Icon: BellIcon,   label: 'Budget' },
+    { id:'home',   Ico:IcoHome,   label:'HOME'   },
+    { id:'txns',   Ico:IcoList,   label:'TXNS'   },
+    { id:'budget', Ico:IcoBudget, label:'BUDGET' },
+    { id:'stats',  Ico:IcoStats,  label:'STATS'  },
   ];
-
   return (
     <div style={{
-      position: 'absolute', bottom: 24, left: 16, right: 16,
-      background: T.dark,
-      borderRadius: 28,
-      boxShadow: '0 -4px 24px rgba(0,0,0,0.12)',
-      display: 'flex', alignItems: 'center',
-      padding: '10px 12px',
-      zIndex: 40,
+      position:'absolute', bottom:0, left:0, right:0,
+      background:'white',
+      borderTop:`1px solid ${D.border}`,
+      boxShadow:'0 -2px 20px rgba(0,0,0,0.06)',
+      display:'flex', alignItems:'stretch',
+      padding:'8px 6px 22px',
+      zIndex:40,
     }}>
-      {tabs.map(({ id, Icon, label }) => {
-        const isActive = active === id;
+      {tabs.map(({ id, Ico, label }) => {
+        const on = active === id;
         return (
           <button key={id} onClick={() => setActive(id)} style={{
-            flex: 1, background: 'none', border: 'none', cursor: 'pointer',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-            color: isActive ? 'white' : '#6B7280',
-            transform: isActive ? 'scale(1.15)' : 'scale(1)',
-            filter: isActive ? 'drop-shadow(0 0 7px rgba(255,255,255,0.45))' : 'none',
-            transition: 'all 200ms ease',
-            fontFamily: 'inherit',
+            flex:1, background:'none', border:'none', cursor:'pointer',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+            color: on ? D.purple : D.sub,
+            fontFamily:'inherit',
+            transition:'color 180ms ease',
+            paddingTop:4,
           }}>
-            <Icon size={22} color={isActive ? 'white' : '#6B7280'}/>
-            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-              {label}
-            </span>
+            <Ico s={21} c={on ? D.purple : D.faint} w={on ? 2.3 : 1.7}/>
+            <span style={{ fontSize:9, fontWeight:700, letterSpacing:0.6 }}>{label}</span>
           </button>
         );
       })}
-
-      {/* FAB-style + button */}
+      {/* floating + */}
       <button onClick={onAdd} style={{
-        width: 52, height: 52, borderRadius: '50%',
-        background: T.brand, border: 'none', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 4px 18px rgba(0,200,150,0.5)',
-        flexShrink: 0, marginLeft: 4,
-        transition: 'transform 200ms ease, box-shadow 200ms ease',
+        position:'absolute', bottom:48, right:20,
+        width:50, height:50, borderRadius:'50%',
+        background:D.purple, border:'none', cursor:'pointer',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        boxShadow:`0 8px 24px ${D.purple}55`,
+        transition:'transform 180ms ease',
       }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.12)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+        onMouseEnter={e => e.currentTarget.style.transform='scale(1.1)'}
+        onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
       >
-        <PlusIcon size={24} color="white"/>
+        <IcoPlus s={21} c="white"/>
       </button>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   ROOT APP
-   ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   APP ROOT
+   ══════════════════════════════════════════════════════════════════════════ */
 function App() {
-  const [screen,   setScreen]   = useState('dashboard');
+  const [screen,   setScreen]   = useState('home');
   const [showAdd,  setShowAdd]  = useState(false);
-  const [tab,      setTab]      = useState('month');
   const [accounts, setAccounts] = useState([]);
   const [txns,     setTxns]     = useState([]);
   const [cats,     setCats]     = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [tick,     setTick]     = useState(0);   // refresh counter
+  const [tick,     setTick]     = useState(0);
 
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
       fetch('/api/accounts').then(r => r.json()).catch(() => []),
-      fetch('/api/transactions?p=month').then(r => r.json()).catch(() => []),
+      fetch('/api/transactions').then(r => r.json()).catch(() => []),
       fetch('/api/categories').then(r => r.json()).catch(() => []),
-    ]).then(([accs, ts, cs]) => {
-      setAccounts(Array.isArray(accs) ? accs : []);
-      setTxns(Array.isArray(ts) ? ts : []);
-      setCats(Array.isArray(cs) ? cs : []);
+    ]).then(([a, t, c]) => {
+      setAccounts(Array.isArray(a) ? a : []);
+      setTxns(Array.isArray(t) ? t : []);
+      setCats(Array.isArray(c) ? c : []);
       setLoading(false);
     });
   }, []);
@@ -1035,30 +929,23 @@ function App() {
 
   return (
     <div style={{
-      width: 390, height: 844,
-      borderRadius: 40, overflow: 'hidden',
-      boxShadow: '0 32px 80px rgba(0,0,0,0.18)',
-      position: 'relative',
-      background: T.bgApp,
+      width:390, height:844,
+      borderRadius:44, overflow:'hidden',
+      boxShadow:'0 40px 100px rgba(0,0,0,0.25)',
+      position:'relative', background:D.bg,
     }}>
-      {screen === 'dashboard' && (
-        <Dashboard
-          accounts={accounts} transactions={txns}
-          activeTab={tab} setActiveTab={setTab}
-          loading={loading}
-        />
-      )}
-      {screen === 'stats'   && <StatsScreen   transactions={txns}/>}
-      {screen === 'budgets' && <BudgetsScreen/>}
+      {screen === 'home'   && <Dashboard accounts={accounts} transactions={txns} loading={loading}/>}
+      {screen === 'txns'   && <TxnsScreen transactions={txns} loading={loading}/>}
+      {screen === 'budget' && <BudgetScreen/>}
+      {screen === 'stats'  && <StatsScreen transactions={txns}/>}
 
       <BottomNav active={screen} setActive={setScreen} onAdd={() => setShowAdd(true)}/>
 
       {showAdd && (
         <AddModal
-          accounts={accounts}
-          categories={cats}
+          accounts={accounts} categories={cats}
           onClose={() => setShowAdd(false)}
-          onSuccess={() => setTick(t => t + 1)}
+          onSuccess={() => setTick(n => n + 1)}
         />
       )}
     </div>
