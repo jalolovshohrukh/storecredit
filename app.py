@@ -1,28 +1,35 @@
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for, g
 from markupsafe import Markup
 from datetime import datetime
-from pymongo import MongoClient
+import psycopg2
+import psycopg2.extras
+import decimal
 import uuid
 import os
 
 app = Flask(__name__)
 
-# ── MongoDB setup ─────────────────────────────────────────────────────────────
-_MONGO_URI = os.environ.get('MONGODB_URI', '')
-if _MONGO_URI:
-    _client = MongoClient(_MONGO_URI)
-    db = _client.get_default_database()
-else:
-    _client = None
-    db = None
+# ── PostgreSQL (Supabase) setup ────────────────────────────────────────────────
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+def get_conn():
+    if 'conn' not in g:
+        g.conn = psycopg2.connect(DATABASE_URL)
+    return g.conn
+
+@app.teardown_appcontext
+def close_conn(e=None):
+    conn = g.pop('conn', None)
+    if conn is not None:
+        conn.close()
 
 @app.before_request
 def check_db():
-    if db is None:
+    if not DATABASE_URL:
         return (
             '<div style="font-family:sans-serif;padding:2rem;max-width:480px;margin:auto">'
-            '<h2>MongoDB not configured</h2>'
-            '<p style="color:#666;margin-top:1rem">Set the <code>MONGODB_URI</code> '
+            '<h2>Database not configured</h2>'
+            '<p style="color:#666;margin-top:1rem">Set the <code>DATABASE_URL</code> '
             'environment variable in your Vercel project settings, then redeploy.</p>'
             '</div>'
         ), 503
@@ -33,46 +40,64 @@ COLORS = ['#6C63FF', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#F7B731', '#A2
 def gen_id():
     return str(uuid.uuid4())[:8]
 
-def norm(doc):
-    """Rename MongoDB _id → id so templates don't change."""
-    if doc and '_id' in doc:
-        doc['id'] = str(doc.pop('_id'))
-    return doc
+def dictify(row):
+    """Convert a RealDictRow to a plain dict, casting Decimal → float."""
+    if row is None:
+        return None
+    return {k: (float(v) if isinstance(v, decimal.Decimal) else v) for k, v in dict(row).items()}
 
-def norm_all(cursor):
-    return [norm(d) for d in cursor]
+def dictify_all(rows):
+    return [dictify(r) for r in rows]
 
 def get_account(aid):
-    return norm(db.accounts.find_one({'_id': aid}))
+    with get_conn().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM accounts WHERE id = %s", (aid,))
+        return dictify(cur.fetchone())
 
 def get_loan(lid):
-    return norm(db.loans.find_one({'_id': lid}))
+    with get_conn().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM loans WHERE id = %s", (lid,))
+        return dictify(cur.fetchone())
 
 def net_worth():
-    result = list(db.accounts.aggregate([
-        {'$group': {'_id': None, 'total': {'$sum': '$balance'}}}
-    ]))
-    return result[0]['total'] if result else 0.0
+    with get_conn().cursor() as cur:
+        cur.execute("SELECT COALESCE(SUM(balance), 0) FROM accounts")
+        return float(cur.fetchone()[0])
 
 def add_txn(date, amount, txn_type, account_id, desc, loan_id=None):
-    db.transactions.insert_one({
-        '_id': gen_id(),
-        'date': date, 'amount': amount, 'type': txn_type,
-        'account_id': account_id, 'description': desc, 'loan_id': loan_id,
-    })
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "INSERT INTO transactions (id, date, amount, type, account_id, description, loan_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (gen_id(), date, amount, txn_type, account_id, desc, loan_id),
+        )
 
 def filter_txns(period):
     now = datetime.now()
-    query = {}
-    if period == 'today':
-        query['date'] = now.strftime('%Y-%m-%d')
-    elif period == 'month':
-        query['date'] = {'$regex': f'^{now.strftime("%Y-%m")}'}
-    elif period == 'year':
-        query['date'] = {'$regex': f'^{str(now.year)}'}
-    elif period == 'last_year':
-        query['date'] = {'$regex': f'^{str(now.year - 1)}'}
-    return norm_all(db.transactions.find(query).sort('date', -1))
+    with get_conn().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        if period == 'today':
+            cur.execute(
+                "SELECT * FROM transactions WHERE date = %s ORDER BY date DESC",
+                (now.strftime('%Y-%m-%d'),),
+            )
+        elif period == 'month':
+            cur.execute(
+                "SELECT * FROM transactions WHERE date LIKE %s ORDER BY date DESC",
+                (f'{now.strftime("%Y-%m")}%',),
+            )
+        elif period == 'year':
+            cur.execute(
+                "SELECT * FROM transactions WHERE date LIKE %s ORDER BY date DESC",
+                (f'{now.year}%',),
+            )
+        elif period == 'last_year':
+            cur.execute(
+                "SELECT * FROM transactions WHERE date LIKE %s ORDER BY date DESC",
+                (f'{now.year - 1}%',),
+            )
+        else:
+            cur.execute("SELECT * FROM transactions ORDER BY date DESC")
+        return dictify_all(cur.fetchall())
 
 def _nav(active):
     pages = [
@@ -243,10 +268,16 @@ _FOOT = '</body></html>'
 
 @app.route('/')
 def home():
+    conn = get_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM accounts")
+        accounts = dictify_all(cur.fetchall())
+        cur.execute("SELECT * FROM loans WHERE status = 'active'")
+        active_loans = dictify_all(cur.fetchall())
     return render_template_string(
         HOME_TMPL,
-        accounts=norm_all(db.accounts.find()),
-        active_loans=norm_all(db.loans.find({'status': 'active'})),
+        accounts=accounts,
+        active_loans=active_loans,
         nw=net_worth(),
         month=datetime.now().strftime('%B %Y'),
         nav=Markup(_nav('home')),
@@ -263,12 +294,15 @@ def add_account():
         else:
             try:
                 balance = float(bal) if bal else 0.0
-                count = db.accounts.count_documents({})
-                db.accounts.insert_one({
-                    '_id': gen_id(), 'name': name,
-                    'balance': round(balance, 2),
-                    'color': COLORS[count % len(COLORS)],
-                })
+                conn = get_conn()
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM accounts")
+                    count = cur.fetchone()[0]
+                    cur.execute(
+                        "INSERT INTO accounts (id, name, balance, color) VALUES (%s, %s, %s, %s)",
+                        (gen_id(), name, round(balance, 2), COLORS[count % len(COLORS)]),
+                    )
+                conn.commit()
                 return redirect(url_for('home'))
             except ValueError:
                 error = 'Invalid balance amount'
@@ -279,7 +313,11 @@ def account_detail(aid):
     acct = get_account(aid)
     if not acct:
         return redirect(url_for('home'))
-    acct_txns = norm_all(db.transactions.find({'account_id': aid}).sort('date', -1))
+    with get_conn().cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT * FROM transactions WHERE account_id = %s ORDER BY date DESC", (aid,)
+        )
+        acct_txns = dictify_all(cur.fetchall())
     return render_template_string(
         ACCOUNT_DETAIL_TMPL, acct=acct, txns=acct_txns,
         nav=Markup(_nav('home')),
@@ -287,14 +325,21 @@ def account_detail(aid):
 
 @app.route('/loans')
 def loan_list():
-    active = norm_all(db.loans.find({'status': 'active'}))
-    paid   = norm_all(db.loans.find({'status': 'paid'}))
+    conn = get_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM loans WHERE status = 'active'")
+        active = dictify_all(cur.fetchall())
+        cur.execute("SELECT * FROM loans WHERE status = 'paid'")
+        paid = dictify_all(cur.fetchall())
     return render_template_string(LOANS_TMPL, active=active, paid=paid, nav=Markup(_nav('loans')))
 
 @app.route('/loans/add', methods=['GET', 'POST'])
 def add_loan():
     error = None
-    all_accounts = norm_all(db.accounts.find())
+    conn = get_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM accounts")
+        all_accounts = dictify_all(cur.fetchall())
     if request.method == 'POST':
         borrower = request.form.get('borrower', '').strip()
         phone    = request.form.get('phone', '').strip()
@@ -318,15 +363,19 @@ def add_loan():
                     error = 'Invalid source account'
                 else:
                     lid = gen_id()
-                    db.accounts.update_one({'_id': from_acc}, {'$inc': {'balance': -amount}})
-                    db.loans.insert_one({
-                        '_id': lid, 'borrower': borrower, 'phone': phone,
-                        'total': amount, 'remaining': amount,
-                        'from_account': from_acc, 'to_account': to_acc,
-                        'date': date, 'note': note, 'status': 'active',
-                        'payments': [],
-                    })
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE accounts SET balance = balance - %s WHERE id = %s",
+                            (amount, from_acc),
+                        )
+                        cur.execute(
+                            "INSERT INTO loans (id, borrower, phone, total, remaining,"
+                            " from_account, to_account, date, note, status)"
+                            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active')",
+                            (lid, borrower, phone, amount, amount, from_acc, to_acc, date, note),
+                        )
                     add_txn(date, amount, 'loan_out', from_acc, f'Loan to {borrower}', lid)
+                    conn.commit()
                     return redirect(url_for('loan_detail', lid=lid))
             except ValueError:
                 if not error:
@@ -342,6 +391,12 @@ def loan_detail(lid):
     loan = get_loan(lid)
     if not loan:
         return redirect(url_for('loan_list'))
+    conn = get_conn()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT * FROM payments WHERE loan_id = %s ORDER BY date ASC", (lid,))
+        loan['payments'] = dictify_all(cur.fetchall())
+        cur.execute("SELECT * FROM accounts")
+        accounts = dictify_all(cur.fetchall())
     pct = int((loan['total'] - loan['remaining']) / loan['total'] * 100) if loan['total'] else 100
     return render_template_string(
         LOAN_DETAIL_TMPL,
@@ -349,7 +404,7 @@ def loan_detail(lid):
         from_acct=get_account(loan['from_account']),
         to_acct=get_account(loan['to_account']),
         pct=pct,
-        accounts=norm_all(db.accounts.find()),
+        accounts=accounts,
         today=datetime.now().strftime('%Y-%m-%d'),
         get_account=get_account,
         nav=Markup(_nav('loans')),
@@ -370,13 +425,23 @@ def add_payment(lid):
             raise ValueError()
         new_remaining = round(loan['remaining'] - amount, 2)
         new_status = 'paid' if new_remaining <= 0 else 'active'
-        payment = {'id': gen_id(), 'date': date, 'amount': amount, 'account_id': to_acc, 'note': note}
-        db.accounts.update_one({'_id': to_acc}, {'$inc': {'balance': amount}})
-        db.loans.update_one(
-            {'_id': lid},
-            {'$set': {'remaining': new_remaining, 'status': new_status}, '$push': {'payments': payment}}
-        )
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE accounts SET balance = balance + %s WHERE id = %s",
+                (amount, to_acc),
+            )
+            cur.execute(
+                "UPDATE loans SET remaining = %s, status = %s WHERE id = %s",
+                (new_remaining, new_status, lid),
+            )
+            cur.execute(
+                "INSERT INTO payments (id, loan_id, date, amount, account_id, note)"
+                " VALUES (%s, %s, %s, %s, %s, %s)",
+                (gen_id(), lid, date, amount, to_acc, note),
+            )
         add_txn(date, amount, 'payment_in', to_acc, f'Payment from {loan["borrower"]}', lid)
+        conn.commit()
     except (ValueError, TypeError):
         pass
     return redirect(url_for('loan_detail', lid=lid))
