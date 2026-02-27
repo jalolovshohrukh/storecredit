@@ -406,8 +406,8 @@ def home():
     accounts = fetch_all("SELECT * FROM accounts ORDER BY name")
     now = datetime.now()
     ym = now.strftime('%Y-%m')
-    inc  = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND TO_CHAR(date,'YYYY-MM')=%s", (ym,))
-    exp  = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND TO_CHAR(date,'YYYY-MM')=%s", (ym,))
+    inc  = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND date::text LIKE %s", (ym + '%',))
+    exp  = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND date::text LIKE %s", (ym + '%',))
     recent = fetch_all("""
         SELECT t.*, c.name AS cat_name, c.icon AS cat_icon, a.currency, a.name AS acct_name
         FROM transactions t
@@ -509,9 +509,9 @@ def txn_list():
     if period == 'today':
         filters.append("t.date=%s"); params.append(now.strftime('%Y-%m-%d'))
     elif period == 'month':
-        filters.append("TO_CHAR(t.date,'YYYY-MM')=%s"); params.append(now.strftime('%Y-%m'))
+        filters.append("t.date::text LIKE %s"); params.append(now.strftime('%Y-%m') + '%')
     elif period == 'year':
-        filters.append("EXTRACT(YEAR FROM t.date)=%s"); params.append(now.year)
+        filters.append("t.date::text LIKE %s"); params.append(str(now.year) + '%')
     if typ != 'all':
         filters.append("t.type=%s"); params.append(typ)
     where = ('WHERE ' + ' AND '.join(filters)) if filters else ''
@@ -542,8 +542,8 @@ def budgets():
     for cat in cats:
         spent = fetch_one(
             "SELECT COALESCE(SUM(amount),0) AS s FROM transactions"
-            " WHERE category_id=%s AND type='expense' AND TO_CHAR(date,'YYYY-MM')=%s",
-            (cat['id'], ym)
+            " WHERE category_id=%s AND type='expense' AND date::text LIKE %s",
+            (cat['id'], ym + '%')
         )
         cat['spent'] = spent['s'] if spent else 0
         if cat['budget_amount']:
@@ -588,12 +588,12 @@ def stats():
         SELECT c.name, c.color, COALESCE(SUM(t.amount),0) AS total
         FROM categories c
         LEFT JOIN transactions t
-          ON t.category_id=c.id AND t.type='expense' AND TO_CHAR(t.date,'YYYY-MM')=%s
+          ON t.category_id=c.id AND t.type='expense' AND t.date::text LIKE %s
         WHERE c.type='expense'
         GROUP BY c.id, c.name, c.color
         HAVING COALESCE(SUM(t.amount),0) > 0
         ORDER BY total DESC
-    """, (ym,))
+    """, (ym + '%',))
     months = []
     for i in range(5, -1, -1):
         m = now.month - i
@@ -603,11 +603,11 @@ def stats():
         months.append(f'{y:04d}-{m:02d}')
     bar_data = []
     for ym2 in months:
-        i2 = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND TO_CHAR(date,'YYYY-MM')=%s", (ym2,))
-        e2 = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND TO_CHAR(date,'YYYY-MM')=%s", (ym2,))
+        i2 = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND date::text LIKE %s", (ym2 + '%',))
+        e2 = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND date::text LIKE %s", (ym2 + '%',))
         bar_data.append({'month': ym2, 'income': i2['s'] if i2 else 0, 'expense': e2['s'] if e2 else 0})
-    ti = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND TO_CHAR(date,'YYYY-MM')=%s", (ym,))
-    te = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND TO_CHAR(date,'YYYY-MM')=%s", (ym,))
+    ti = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='income' AND date::text LIKE %s", (ym + '%',))
+    te = fetch_one("SELECT COALESCE(SUM(amount),0) AS s FROM transactions WHERE type='expense' AND date::text LIKE %s", (ym + '%',))
     return render_template_string(STATS_TMPL,
         pie_labels=json.dumps([d['name'] for d in cat_data]),
         pie_values=json.dumps([d['total'] for d in cat_data]),
