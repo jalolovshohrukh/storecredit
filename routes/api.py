@@ -67,6 +67,10 @@ def get_transactions():
         filters.append("t.date::text LIKE %s"); params.append(now.strftime('%Y-%m') + '%')
     elif period == 'year':
         filters.append("t.date::text LIKE %s"); params.append(str(now.year) + '%')
+    elif len(period) == 4 and period.isdigit():          # e.g. "2025"
+        filters.append("t.date::text LIKE %s"); params.append(period + '%')
+    elif len(period) == 7 and period[4] == '-':          # e.g. "2025-03"
+        filters.append("t.date::text LIKE %s"); params.append(period + '%')
     if typ != 'all':
         filters.append("t.type=%s");            params.append(typ)
     account_id = request.args.get('account_id')
