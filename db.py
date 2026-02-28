@@ -128,6 +128,7 @@ def ensure_tables():
             )""")
         # Migrate existing tables: add columns that may not exist yet
         c.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS currency VARCHAR(3) DEFAULT 'USD'")
+        c.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'debit'")
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category_id VARCHAR(8)")
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS to_account_id VARCHAR(8)")
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note TEXT")

@@ -180,8 +180,10 @@ const INote  = p => <I {...p}><line x1="17" y1="10" x2="3" y2="10"/><line x1="21
 const IDown  = p => <I {...p}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></I>;
 const IUp    = p => <I {...p}><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></I>;
 const ITrash = p => <I {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></I>;
-const ISun   = p => <I {...p}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></I>;
-const IMoon  = p => <I {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></I>;
+const ISun    = p => <I {...p}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></I>;
+const IMoon   = p => <I {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></I>;
+const IEye    = p => <I {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></I>;
+const IEyeOff = p => <I {...p}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></I>;
 
 /* ════════════════════════════════════════════════════════════════════════
    HOME SCREEN — category grid
@@ -879,48 +881,286 @@ function TxnRow({ t, i, currency }) {
 /* ════════════════════════════════════════════════════════════════════════
    ACCOUNT SCREEN
    ════════════════════════════════════════════════════════════════════════ */
-function AccountScreen({ accounts }) {
-  const lm    = useContext(ThemeCtx);
-  const total = accounts.reduce((s,a) => s + (a.balance||0), 0);
-  const cur   = accounts[0]?.currency || 'USD';
+const ACCOUNT_TYPES = [
+  { key:'debit',    label:'Debit',    icon:'🏦', desc:'Bank / Cash' },
+  { key:'lent',     label:'Lent',     icon:'🤝', desc:'Money you lent' },
+  { key:'borrowed', label:'Borrowed', icon:'💳', desc:'Money you owe' },
+  { key:'invest',   label:'Invest',   icon:'📈', desc:'Investments' },
+];
+
+const GROUP_CFG = {
+  debit:    { label:'Debit',    labelClr:'#7B8CDE', balClr: null },
+  lent:     { label:'Lent',     labelClr:'#2ECC71', balClr:'#2ECC71' },
+  borrowed: { label:'Borrowed', labelClr:'#A29BFE', balClr:'#E74C3C' },
+  invest:   { label:'Invest',   labelClr:'#7B8CDE', balClr: null },
+};
+
+function AccountScreen({ accounts, onRefresh }) {
+  const lm = useContext(ThemeCtx);
+  const [collapsed, setCollapsed] = useState({});
+  const [hidden,    setHidden]    = useState(false);
+  const [addOpen,   setAddOpen]   = useState(false);
+  const [addOn,     setAddOn]     = useState(false);
+
+  /* group accounts by type */
+  const grouped = { debit:[], lent:[], borrowed:[], invest:[] };
+  accounts.forEach(a => {
+    const t = (a.type || 'debit').toLowerCase();
+    (grouped[t] || grouped.debit).push(a);
+  });
+
+  /* net worth — face-value sum (no FX conversion) */
+  const assets      = ['debit','lent','invest'].flatMap(t => grouped[t]).reduce((s,a) => s+(a.balance||0), 0);
+  const liabilities = grouped.borrowed.reduce((s,a) => s+Math.abs(a.balance||0), 0);
+  const netWorth    = assets - liabilities;
+
+  const mask = v => hidden ? '••••' : v;
+
+  const openAdd  = () => { setAddOpen(true);  setTimeout(() => setAddOn(true),  10); };
+  const closeAdd = () => { setAddOn(false);   setTimeout(() => setAddOpen(false), 310); };
+
   return (
-    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
-      <div style={{ padding:'52px 18px 0' }}>
-        <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:4 }}>Accounts</h1>
-        <p style={{ fontSize:13, color:T3, marginBottom:24 }}>Total: {fmtAmt(total, cur)}</p>
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', background:APP_BG }}>
+
+      {/* ── TOP BAR ──────────────────────────────────────────────────── */}
+      <div style={{ padding:'48px 18px 10px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ fontSize:14, fontWeight:700, color:'#7B8CDE' }}>All</span>
+          <IChev s={12} c="#7B8CDE" w={2.5}/>
+        </div>
+        <button onClick={openAdd} style={{
+          width:32, height:32, borderRadius:'50%', background:'#5B4DD3',
+          border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+        }}>
+          <IPlus s={16} c="white"/>
+        </button>
       </div>
-      <div style={{ padding:'0 12px 120px' }}>
-        {accounts.length === 0
-          ? <div style={{ textAlign:'center', padding:'60px 0' }}>
-              <div style={{ fontSize:40, marginBottom:10 }}>🏦</div>
-              <div style={{ fontWeight:700, color:T2 }}>No accounts yet</div>
+
+      {/* ── SCROLL AREA ──────────────────────────────────────────────── */}
+      <div style={{ flex:1, overflowY:'auto', padding:'0 14px 100px' }}>
+
+        {/* ── NET WORTH CARD ───────────────────────────────────────── */}
+        <div style={{
+          borderRadius:22, overflow:'hidden', marginBottom:18,
+          background:'linear-gradient(140deg, #7B6CF6 0%, #5040C8 100%)',
+          position:'relative',
+        }}>
+          {/* decorative waves */}
+          <svg viewBox="0 0 390 70" style={{ position:'absolute', bottom:0, left:0, width:'100%', display:'block' }} preserveAspectRatio="none">
+            <path d="M0,35 C70,10 150,55 230,30 C300,8 350,50 390,28 L390,70 L0,70 Z" fill="rgba(255,255,255,0.06)"/>
+            <path d="M0,50 C90,28 170,60 260,42 C320,28 365,55 390,44 L390,70 L0,70 Z" fill="rgba(255,255,255,0.05)"/>
+            <path d="M0,62 C110,48 210,68 310,56 C350,50 375,62 390,58 L390,70 L0,70 Z" fill="rgba(255,255,255,0.05)"/>
+          </svg>
+
+          <div style={{ padding:'18px 18px 30px', position:'relative' }}>
+            {/* eye | title | chart */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <button onClick={() => setHidden(h => !h)} style={{
+                width:32, height:32, borderRadius:'50%',
+                background:'rgba(255,255,255,0.18)', border:'none', cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}>
+                {hidden ? <IEyeOff s={15} c="rgba(255,255,255,0.9)"/> : <IEye s={15} c="rgba(255,255,255,0.9)"/>}
+              </button>
+              <span style={{ fontSize:13, fontWeight:600, color:'rgba(255,255,255,0.75)', letterSpacing:0.4 }}>Net Worth</span>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:'rgba(255,255,255,0.18)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+                </svg>
+              </div>
             </div>
-          : accounts.map((a, i) => {
-              const pal = palette(a.id || a.name, lm);
-              return (
-                <div key={a.id} style={{
-                  background:'var(--bg2)', borderRadius:18, padding:'16px 18px', marginBottom:10,
-                  border:`1px solid var(--border)`,
-                  animation:`fadeUp 180ms ${i*50}ms ease both`,
-                }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-                    <div style={{ width:48, height:48, borderRadius:14, background:pal.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, flexShrink:0, border:`1px solid ${CARD_BORDER}` }}>
-                      <span style={{ color:pal.cc, fontSize:20, fontWeight:800 }}>$</span>
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:16, fontWeight:700, color:T1 }}>{a.name}</div>
-                      <div style={{ fontSize:12, color:T3, marginTop:2 }}>{a.currency}</div>
-                    </div>
-                    <div style={{ fontSize:16, fontWeight:800, color:T1, textAlign:'right' }}>
-                      {fmtAmt(a.balance, a.currency)}
-                    </div>
+
+            {/* net worth amount */}
+            <div style={{ textAlign:'center', marginBottom:20 }}>
+              <span style={{ fontSize:36, fontWeight:800, color:'white', letterSpacing:'-1.5px' }}>
+                {hidden ? '$ ••••••' : fmtAmt(netWorth)}
+              </span>
+            </div>
+
+            {/* assets / liabilities */}
+            <div style={{ display:'flex' }}>
+              <div style={{ flex:1, textAlign:'center' }}>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginBottom:3 }}>Assets</div>
+                <div style={{ fontSize:14, fontWeight:700, color:'white' }}>{mask(fmtAmt(assets))}</div>
+              </div>
+              <div style={{ width:1, background:'rgba(255,255,255,0.2)' }}/>
+              <div style={{ flex:1, textAlign:'center' }}>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.6)', marginBottom:3 }}>Liabilities</div>
+                <div style={{ fontSize:14, fontWeight:700, color:'white' }}>{mask(fmtAmt(liabilities))}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── ACCOUNT GROUPS ───────────────────────────────────────── */}
+        {Object.keys(GROUP_CFG).map(key => {
+          const cfg    = GROUP_CFG[key];
+          const accs   = grouped[key] || [];
+          if (accs.length === 0) return null;
+          const total  = accs.reduce((s,a) => s+(a.balance||0), 0);
+          const isOpen = collapsed[key] !== false; // default open
+
+          return (
+            <div key={key} style={{
+              background:'var(--bg2)', borderRadius:18, marginBottom:14,
+              overflow:'hidden', border:`1px solid var(--border)`,
+              animation:'fadeUp 200ms ease both',
+            }}>
+              {/* group header */}
+              <div
+                onClick={() => setCollapsed(c => ({ ...c, [key]: !isOpen }))}
+                style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 18px', cursor:'pointer' }}
+              >
+                <span style={{ fontSize:15, fontWeight:700, color:cfg.labelClr }}>{cfg.label}</span>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:13, fontWeight:700, color: cfg.balClr || T1 }}>
+                    Bal. {mask(fmtAmt(total))}
+                  </span>
+                  <div style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition:'transform 220ms' }}>
+                    <IChev s={14} c={T3} w={2}/>
                   </div>
                 </div>
-              );
-            })
-        }
+              </div>
+
+              {/* account rows */}
+              {isOpen && accs.map((a) => {
+                const pal = palette(a.id || a.name, lm);
+                const neg = (a.balance || 0) < 0;
+                return (
+                  <div key={a.id} style={{
+                    display:'flex', alignItems:'center', gap:13, padding:'11px 18px',
+                    borderTop:`1px solid var(--border)`,
+                  }}>
+                    <div style={{
+                      width:40, height:40, borderRadius:12,
+                      background: pal.bg, border:`1px solid ${CARD_BORDER}`,
+                      display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+                    }}>
+                      <span style={{ color:pal.cc, fontSize:16, fontWeight:800 }}>
+                        {(a.name||'?')[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:T1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {a.name}
+                      </div>
+                      <div style={{ fontSize:11, color:T3, marginTop:1 }}>{a.currency}</div>
+                    </div>
+                    <div style={{ fontSize:14, fontWeight:700, color: neg ? '#E74C3C' : T1, whiteSpace:'nowrap' }}>
+                      {mask(fmtAmt(a.balance || 0, a.currency))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        {accounts.length === 0 && (
+          <div style={{ textAlign:'center', padding:'60px 0' }}>
+            <div style={{ fontSize:44, marginBottom:10 }}>🏦</div>
+            <div style={{ fontWeight:700, color:T2, marginBottom:6 }}>No accounts yet</div>
+            <div style={{ fontSize:13, color:T3 }}>Tap + to add your first account</div>
+          </div>
+        )}
       </div>
+
+      {/* ── ADD ACCOUNT MODAL ────────────────────────────────────────── */}
+      {addOpen && (
+        <AddAccountModal on={addOn} onClose={closeAdd} onSuccess={() => { closeAdd(); onRefresh?.(); }}/>
+      )}
     </div>
+  );
+}
+
+/* ── Add Account Modal ─────────────────────────────────────────────────── */
+function AddAccountModal({ on, onClose, onSuccess }) {
+  const [name,    setName]    = useState('');
+  const [type,    setType]    = useState('debit');
+  const [cur,     setCur]     = useState('USD');
+  const [balance, setBalance] = useState('');
+  const [busy,    setBusy]    = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/accounts', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name:name.trim(), type, currency:cur, balance:parseFloat(balance||0) }),
+      });
+      if (r.ok) onSuccess();
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <ModalShell on={on} onClose={onClose} title="New Account">
+      <div style={{ padding:'0 20px 24px', display:'flex', flexDirection:'column', gap:16, overflowY:'auto' }}>
+
+        {/* type selector */}
+        <div>
+          <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:8 }}>TYPE</label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            {ACCOUNT_TYPES.map(t => {
+              const active = type === t.key;
+              return (
+                <button key={t.key} onClick={() => setType(t.key)} style={{
+                  padding:'10px 12px', borderRadius:12,
+                  border:`2px solid ${active ? '#5B4DD3' : 'var(--border3)'}`,
+                  background: active ? 'rgba(91,77,211,0.15)' : 'var(--bg4)',
+                  cursor:'pointer', display:'flex', alignItems:'center', gap:8,
+                }}>
+                  <span style={{ fontSize:18 }}>{t.icon}</span>
+                  <div style={{ textAlign:'left' }}>
+                    <div style={{ fontSize:13, fontWeight:700, color: active ? '#8B7CF8' : T1 }}>{t.label}</div>
+                    <div style={{ fontSize:10, color:T3 }}>{t.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* name */}
+        <div>
+          <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:6 }}>ACCOUNT NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Main Wallet"
+            style={{ width:'100%', background:'var(--bg4)', border:`1px solid var(--border3)`, borderRadius:12, padding:'12px 14px', color:T1, fontSize:14, fontWeight:500, fontFamily:'inherit', outline:'none' }}/>
+        </div>
+
+        {/* currency + balance */}
+        <div style={{ display:'flex', gap:10 }}>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:6 }}>CURRENCY</label>
+            <select value={cur} onChange={e => setCur(e.target.value)} style={{
+              width:'100%', background:'var(--bg4)', border:`1px solid var(--border3)`,
+              borderRadius:12, padding:'12px 14px', color:T1, fontSize:14,
+              fontFamily:'inherit', outline:'none', appearance:'none',
+            }}>
+              {['USD','EUR','UZS','RUB','GBP','CNY','KZT','TRY','JPY','AED'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex:1 }}>
+            <label style={{ fontSize:12, color:T3, fontWeight:600, letterSpacing:0.5, display:'block', marginBottom:6 }}>STARTING BALANCE</label>
+            <input type="number" value={balance} onChange={e => setBalance(e.target.value)} placeholder="0"
+              style={{ width:'100%', background:'var(--bg4)', border:`1px solid var(--border3)`, borderRadius:12, padding:'12px 14px', color:T1, fontSize:14, fontWeight:500, fontFamily:'inherit', outline:'none' }}/>
+          </div>
+        </div>
+
+        {/* submit */}
+        <button onClick={submit} disabled={!name.trim()||busy} style={{
+          padding:'14px', borderRadius:14, border:'none',
+          cursor: !name.trim()||busy ? 'not-allowed' : 'pointer',
+          background: !name.trim()||busy ? 'var(--bg5)' : '#5B4DD3',
+          color:T1, fontSize:15, fontWeight:700, fontFamily:'inherit',
+          transition:'background 150ms',
+        }}>
+          {busy ? 'Saving…' : 'Create Account'}
+        </button>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -1103,7 +1343,7 @@ function App() {
         }}
       >
         {screen === 'home'     && <HomeScreen accounts={accounts} onAccountChange={() => setTick(t=>t+1)} onToggleTheme={toggleTheme}/>}
-        {screen === 'accounts' && <AccountScreen accounts={accounts}/>}
+        {screen === 'accounts' && <AccountScreen accounts={accounts} onRefresh={() => setTick(t=>t+1)}/>}
         {screen === 'txns'     && <TxnsScreen accounts={accounts}/>}
         {screen === 'budget'   && <BudgetScreen accounts={accounts}/>}
         {screen === 'settings' && <SettingScreen/>}

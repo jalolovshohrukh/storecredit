@@ -12,6 +12,43 @@ def get_accounts():
     return jsonify(fetch_all("SELECT * FROM accounts ORDER BY name"))
 
 
+@api_bp.route('/accounts', methods=['POST'])
+def create_account():
+    from config import COLORS
+    d    = request.get_json(force=True)
+    name = (d.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'name required'}), 400
+    n     = fetch_one("SELECT COUNT(*) AS c FROM accounts")
+    count = int(n['c']) if n else 0
+    aid   = gen_id()
+    execute(
+        "INSERT INTO accounts(id,name,balance,currency,color,type) VALUES(%s,%s,%s,%s,%s,%s)",
+        (aid, name, float(d.get('balance') or 0), d.get('currency', 'USD'),
+         COLORS[count % len(COLORS)], d.get('type', 'debit')),
+    )
+    return jsonify({'ok': True, 'id': aid})
+
+
+@api_bp.route('/accounts/<aid>', methods=['DELETE'])
+def delete_account(aid):
+    execute("DELETE FROM transactions WHERE account_id=%s OR to_account_id=%s", (aid, aid))
+    execute("DELETE FROM accounts WHERE id=%s", (aid,))
+    return jsonify({'ok': True})
+
+
+@api_bp.route('/accounts/<aid>', methods=['PUT'])
+def update_account(aid):
+    d = request.get_json(force=True)
+    fields, vals = [], []
+    for col in ('name', 'balance', 'currency', 'type', 'color'):
+        if col in d:
+            fields.append(f"{col}=%s"); vals.append(d[col])
+    if fields:
+        execute(f"UPDATE accounts SET {', '.join(fields)} WHERE id=%s", (*vals, aid))
+    return jsonify({'ok': True})
+
+
 @api_bp.route('/categories')
 def get_categories():
     return jsonify(fetch_all("SELECT * FROM categories ORDER BY type, name"))
