@@ -971,7 +971,7 @@ function TxnsScreen({ accounts }) {
         {/* month grid */}
         {!selMonth && (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:5, padding:'0 12px 10px', flexShrink:0 }}>
-            {monthData.map(({ m, income, expense }) => {
+            {monthData.map(({ m, name, income, expense }) => {
               const hasData   = income > 0 || expense > 0;
               const isCurrent = m === now.getMonth()+1 && selYear === now.getFullYear();
               return (
@@ -982,7 +982,7 @@ function TxnsScreen({ accounts }) {
                   display:'flex', flexDirection:'column', alignItems:'center', gap:2, minHeight:62,
                   transition:'transform 80ms',
                 }}>
-                  <span style={{ fontSize:13, fontWeight:700, color: isCurrent ? '#8B7CF8' : T2 }}>{m}</span>
+                  <span style={{ fontSize:11, fontWeight:700, color: isCurrent ? '#8B7CF8' : T2 }}>{name}</span>
                   {income  > 0 && <span style={{ fontSize:8, color:'#2ECC71', fontWeight:700, lineHeight:1.2 }}>{fmtCompact(income)}</span>}
                   {expense > 0 && <span style={{ fontSize:8, color:'#E74C3C', fontWeight:700, lineHeight:1.2 }}>{fmtCompact(expense)}</span>}
                   {!hasData && <span style={{ fontSize:9, color:T3, marginTop:2 }}>—</span>}
