@@ -61,7 +61,9 @@ def get_transactions():
     now    = datetime.now()
     filters, params = [], []
 
-    if period == 'today':
+    if period == 'all':
+        pass  # no date filter — return everything
+    elif period == 'today':
         filters.append("t.date=%s");           params.append(now.strftime('%Y-%m-%d'))
     elif period == 'month':
         filters.append("t.date::text LIKE %s"); params.append(now.strftime('%Y-%m') + '%')
@@ -229,6 +231,14 @@ def update_category(cid):
             fields.append(f"{col}=%s"); vals.append(d[col])
     if fields:
         execute(f"UPDATE categories SET {', '.join(fields)} WHERE id=%s", (*vals, cid))
+    return jsonify({'ok': True})
+
+
+@api_bp.route('/data', methods=['DELETE'])
+def clear_all_data():
+    """Wipe all transactions and reset every account balance to 0."""
+    execute("DELETE FROM transactions")
+    execute("UPDATE accounts SET balance = 0")
     return jsonify({'ok': True})
 
 

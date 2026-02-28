@@ -1976,18 +1976,382 @@ function BudgetScreen({ accounts }) {
 /* ════════════════════════════════════════════════════════════════════════
    SETTINGS SCREEN
    ════════════════════════════════════════════════════════════════════════ */
-function SettingScreen() {
+/* ── Settings helpers ─────────────────────────────────────────────────── */
+const ACCENT_COLORS = ['#5B4DD3','#E74C3C','#2ECC71','#F39C12','#3498DB','#E91E63'];
+const ALL_CURRENCIES = ['USD','EUR','UZS','RUB','GBP','CNY','KZT','TRY','JPY','AED'];
+const CUR_FLAGS = {USD:'🇺🇸',EUR:'🇪🇺',UZS:'🇺🇿',RUB:'🇷🇺',GBP:'🇬🇧',CNY:'🇨🇳',KZT:'🇰🇿',TRY:'🇹🇷',JPY:'🇯🇵',AED:'🇦🇪'};
+
+/* Category manager sheet */
+function CategoryManagerSheet({ onClose, visible }) {
+  const lm = useContext(ThemeCtx);
+  const [cats, setCats]       = useState([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editCat, setEditCat] = useState(null);  // cat being edited
+  const [form, setForm]       = useState({ name:'', icon:'💰', type:'expense' });
+  const ICONS = ['🍔','🚗','🏠','💊','🎬','✈️','🛍️','📱','🎓','⚽','💰','💼','🏦','🎁','🐶','💇','🏋️','📚'];
+
+  const load = () => fetch('/api/categories').then(r=>r.json()).then(d=>setCats(Array.isArray(d)?d:[])).catch(()=>{});
+  useEffect(() => { load(); }, []);
+
+  const openAdd = () => { setForm({ name:'', icon:'💰', type:'expense' }); setEditCat(null); setAddOpen(true); };
+  const openEdit = cat => { setForm({ name:cat.name, icon:cat.icon||'💰', type:cat.type }); setEditCat(cat); setAddOpen(true); };
+
+  const save = () => {
+    if (!form.name.trim()) return;
+    const body = { name:form.name.trim(), icon:form.icon, type:form.type };
+    const req = editCat
+      ? fetch(`/api/categories/${editCat.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+      : fetch('/api/categories', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    req.then(()=>{ setAddOpen(false); load(); });
+  };
+
+  const del = id => {
+    if (!confirm('Delete this category and its transactions?')) return;
+    fetch(`/api/categories/${id}`, { method:'DELETE' }).then(load);
+  };
+
+  const expCats = cats.filter(c=>c.type==='expense');
+  const incCats = cats.filter(c=>c.type==='income');
+
   return (
-    <div style={{ height:'100%', overflowY:'auto', background:APP_BG }}>
-      <div style={{ padding:'52px 18px 0' }}>
-        <h1 style={{ fontSize:26, fontWeight:800, color:T1, marginBottom:24 }}>Settings</h1>
+    <div style={{
+      position:'absolute', inset:0, zIndex:600, background:APP_BG,
+      display:'flex', flexDirection:'column',
+      transform: visible ? 'translateY(0)' : 'translateY(100%)',
+      transition:'transform 300ms ease',
+    }}>
+      {/* header */}
+      <div style={{ padding:'48px 18px 12px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+        <button onClick={onClose} style={{ width:34,height:34,borderRadius:'50%',background:'var(--bg3)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <IChevL s={18} c={T2} w={2.5}/>
+        </button>
+        <span style={{ fontSize:17, fontWeight:700, color:T1, flex:1 }}>Categories</span>
+        <button onClick={openAdd} style={{ width:34,height:34,borderRadius:'50%',background:'#5B4DD3',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <IPlus s={18} c="#fff" w={2.5}/>
+        </button>
       </div>
-      {[['Manage Accounts','/accounts'],['Manage Categories','/categories'],['Budgets','/budgets'],['Recurring Rules','/recurring']].map(([l,h]) => (
-        <a key={l} href={h} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', background:'var(--bg2)', borderBottom:`1px solid var(--border)`, textDecoration:'none' }}>
-          <span style={{ fontSize:15, fontWeight:600, color:T1 }}>{l}</span>
-          <IChevR s={16} c={T3}/>
-        </a>
-      ))}
+
+      <div style={{ flex:1, overflowY:'auto', padding:'0 14px 90px' }}>
+        {[['Expense',expCats],['Income',incCats]].map(([label, list]) => (
+          <div key={label} style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:T3, letterSpacing:1, padding:'0 4px 8px', textTransform:'uppercase' }}>{label}</div>
+            <div style={{ background:'var(--bg2)', borderRadius:18, overflow:'hidden', border:`1px solid var(--border)` }}>
+              {list.length === 0
+                ? <div style={{ padding:'16px', color:T3, fontSize:13, textAlign:'center' }}>No categories</div>
+                : list.map((cat, i) => {
+                    const p = palette(cat.id||cat.name, lm);
+                    return (
+                      <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderTop: i>0?`1px solid var(--border)`:'none' }}>
+                        <div style={{ width:40,height:40,borderRadius:11,background:p.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19,flexShrink:0 }}>
+                          {cat.icon||'💰'}
+                        </div>
+                        <span style={{ flex:1, fontSize:14, fontWeight:600, color:T1 }}>{cat.name}</span>
+                        <button onClick={() => openEdit(cat)} style={{ background:'none',border:'none',cursor:'pointer',padding:'4px',color:T3 }}>✏️</button>
+                        <button onClick={() => del(cat.id)} style={{ background:'none',border:'none',cursor:'pointer',padding:'4px',color:'#E74C3C' }}>🗑️</button>
+                      </div>
+                    );
+                  })
+              }
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* add/edit sheet */}
+      {addOpen && (
+        <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',zIndex:10,display:'flex',alignItems:'flex-end' }}>
+          <div style={{ width:'100%',background:'var(--bg2)',borderRadius:'24px 24px 0 0',padding:'24px 20px 40px',animation:'modalUp 280ms ease' }}>
+            <div style={{ fontSize:16,fontWeight:700,color:T1,marginBottom:16 }}>{editCat ? 'Edit Category' : 'New Category'}</div>
+            {/* type toggle */}
+            <div style={{ display:'flex',background:'var(--bg4)',borderRadius:20,padding:3,marginBottom:16 }}>
+              {['expense','income'].map(t=>(
+                <button key={t} onClick={()=>setForm(f=>({...f,type:t}))} style={{ flex:1,padding:'7px',borderRadius:18,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,background:form.type===t?'#5B4DD3':'transparent',color:form.type===t?'#fff':T3,transition:'all 150ms' }}>
+                  {t==='expense'?'Expense':'Income'}
+                </button>
+              ))}
+            </div>
+            {/* icon picker */}
+            <div style={{ display:'grid',gridTemplateColumns:'repeat(9,1fr)',gap:6,marginBottom:16 }}>
+              {ICONS.map(ic=>(
+                <button key={ic} onClick={()=>setForm(f=>({...f,icon:ic}))} style={{ width:'100%',aspectRatio:'1',borderRadius:10,border:form.icon===ic?'2px solid #5B4DD3':'2px solid transparent',background:form.icon===ic?'rgba(91,77,211,0.15)':'var(--bg4)',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                  {ic}
+                </button>
+              ))}
+            </div>
+            {/* name */}
+            <input
+              value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}
+              placeholder="Category name"
+              style={{ width:'100%',padding:'13px 16px',borderRadius:14,border:`1px solid var(--border3)`,background:'var(--bg4)',color:T1,fontFamily:'inherit',fontSize:15,outline:'none',marginBottom:16 }}
+            />
+            <div style={{ display:'flex',gap:10 }}>
+              <button onClick={()=>setAddOpen(false)} style={{ flex:1,padding:'13px',borderRadius:14,border:`1px solid var(--border)`,background:'none',color:T2,fontFamily:'inherit',fontSize:14,fontWeight:600,cursor:'pointer' }}>Cancel</button>
+              <button onClick={save} style={{ flex:2,padding:'13px',borderRadius:14,border:'none',background:'#5B4DD3',color:'#fff',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:'pointer' }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Currency picker sheet */
+function CurrencySheet({ current, onPick, onClose, visible }) {
+  return (
+    <div style={{ position:'absolute',inset:0,zIndex:620,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'flex-end', opacity:visible?1:0,pointerEvents:visible?'all':'none',transition:'opacity 250ms' }}>
+      <div style={{ width:'100%',background:'var(--bg2)',borderRadius:'24px 24px 0 0',padding:'24px 0 40px',animation:visible?'modalUp 280ms ease':'' }}>
+        <div style={{ fontSize:16,fontWeight:700,color:T1,padding:'0 20px 16px' }}>Default Currency</div>
+        {ALL_CURRENCIES.map(c=>(
+          <button key={c} onClick={()=>onPick(c)} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'14px 20px',background:'none',border:'none',cursor:'pointer',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:24 }}>{CUR_FLAGS[c]||'💱'}</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>{c}</span>
+            {c===current && <span style={{ color:'#5B4DD3',fontSize:18 }}>✓</span>}
+          </button>
+        ))}
+        <div style={{ padding:'16px 20px 0' }}>
+          <button onClick={onClose} style={{ width:'100%',padding:'13px',borderRadius:14,border:'none',background:'var(--bg4)',color:T2,fontFamily:'inherit',fontSize:14,fontWeight:600,cursor:'pointer' }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingScreen({ lightMode, onToggleTheme, onScreenChange, onRefresh }) {
+  const [profileName, setProfileName] = useState(() => localStorage.getItem('profileName') || 'My Profile');
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput,   setNameInput]   = useState('');
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accentColor') || '#5B4DD3');
+  const [defCurrency, setDefCurrency] = useState(() => localStorage.getItem('defCurrency') || 'USD');
+  const [showCurSheet,setShowCurSheet]= useState(false);
+  const [showCatMgr,  setShowCatMgr] = useState(false);
+  const [catMgrVis,   setCatMgrVis]  = useState(false);
+  const [clearing,    setClearing]   = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  /* apply accent color to CSS variable */
+  useEffect(() => {
+    document.querySelector('[data-theme]')?.style.setProperty('--accent', accentColor);
+  }, [accentColor]);
+
+  const saveAccent = color => {
+    setAccentColor(color);
+    localStorage.setItem('accentColor', color);
+    document.querySelector('[data-theme]')?.style.setProperty('--accent', color);
+  };
+
+  const saveName = () => {
+    const n = nameInput.trim() || profileName;
+    setProfileName(n);
+    localStorage.setItem('profileName', n);
+    setEditingName(false);
+  };
+
+  const pickCurrency = c => {
+    setDefCurrency(c);
+    localStorage.setItem('defCurrency', c);
+    setShowCurSheet(false);
+  };
+
+  const openCatMgr = () => { setShowCatMgr(true); setTimeout(()=>setCatMgrVis(true),10); };
+  const closeCatMgr= () => { setCatMgrVis(false); setTimeout(()=>setShowCatMgr(false),310); };
+
+  const exportCSV = () => {
+    fetch('/api/transactions?p=all')
+      .then(r=>r.json())
+      .then(rows => {
+        if (!Array.isArray(rows) || rows.length===0) { alert('No transactions to export.'); return; }
+        const headers = ['Date','Type','Amount','Category','Account','Note'];
+        const lines = [headers.join(',')];
+        rows.forEach(t => {
+          lines.push([
+            t.date||'', t.type||'', t.amount||0,
+            `"${(t.cat_name||'').replace(/"/g,'""')}"`,
+            `"${(t.acct_name||'').replace(/"/g,'""')}"`,
+            `"${(t.note||'').replace(/"/g,'""')}"`,
+          ].join(','));
+        });
+        const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = `transactions_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click(); URL.revokeObjectURL(url);
+      })
+      .catch(()=>alert('Export failed.'));
+  };
+
+  const clearAllData = () => {
+    setClearing(true);
+    fetch('/api/data', { method:'DELETE' })
+      .then(r=>r.json())
+      .then(()=>{ setClearing(false); setShowClearConfirm(false); if (onRefresh) onRefresh(); alert('All data cleared.'); })
+      .catch(()=>{ setClearing(false); alert('Failed to clear data.'); });
+  };
+
+  /* section + row helpers */
+  const SectionLabel = ({ label }) => (
+    <div style={{ fontSize:11,fontWeight:700,color:T3,letterSpacing:1,padding:'20px 18px 8px',textTransform:'uppercase' }}>{label}</div>
+  );
+
+  const Row = ({ icon, label, right, onClick, danger }) => (
+    <button onClick={onClick} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'var(--bg2)',border:'none',borderTop:`1px solid var(--border)`,cursor:onClick?'pointer':'default',textAlign:'left',fontFamily:'inherit' }}>
+      <span style={{ fontSize:20,width:26,textAlign:'center',flexShrink:0 }}>{icon}</span>
+      <span style={{ fontSize:15,fontWeight:600,color:danger?'#E74C3C':T1,flex:1 }}>{label}</span>
+      {right ?? <IChevR s={15} c={T3}/>}
+    </button>
+  );
+
+  const Toggle = ({ on, onToggle }) => (
+    <div onClick={onToggle} style={{ width:46,height:26,borderRadius:13,background:on?'#5B4DD3':'var(--bg5)',cursor:'pointer',position:'relative',transition:'background 200ms',flexShrink:0 }}>
+      <div style={{ position:'absolute',top:3,left:on?23:3,width:20,height:20,borderRadius:'50%',background:'#fff',transition:'left 200ms',boxShadow:'0 1px 4px rgba(0,0,0,0.3)' }}/>
+    </div>
+  );
+
+  const initials = profileName.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', background:APP_BG, position:'relative' }}>
+      <div style={{ flex:1, overflowY:'auto', paddingBottom:90 }}>
+
+        {/* ── TOP TITLE ──────────────────────────────────────────────── */}
+        <div style={{ padding:'52px 18px 8px' }}>
+          <h1 style={{ fontSize:26, fontWeight:800, color:T1 }}>Settings</h1>
+        </div>
+
+        {/* ── PROFILE ───────────────────────────────────────────────── */}
+        <div style={{ margin:'8px 14px 0', background:'var(--bg2)', borderRadius:20, padding:'18px 16px', border:`1px solid var(--border)`, display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:56,height:56,borderRadius:16,background:'linear-gradient(135deg,#5B4DD3,#9B59B6)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+            <span style={{ fontSize:20,fontWeight:800,color:'#fff' }}>{initials||'Me'}</span>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            {editingName ? (
+              <div style={{ display:'flex',gap:8,alignItems:'center' }}>
+                <input
+                  autoFocus value={nameInput} onChange={e=>setNameInput(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&saveName()}
+                  style={{ flex:1,padding:'8px 12px',borderRadius:10,border:`1px solid #5B4DD3`,background:'var(--bg4)',color:T1,fontFamily:'inherit',fontSize:14,outline:'none' }}
+                />
+                <button onClick={saveName} style={{ padding:'8px 14px',borderRadius:10,border:'none',background:'#5B4DD3',color:'#fff',fontFamily:'inherit',fontSize:13,fontWeight:700,cursor:'pointer' }}>Save</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize:17,fontWeight:700,color:T1 }}>{profileName}</div>
+                <div style={{ fontSize:12,color:T3,marginTop:2 }}>Tap to edit name</div>
+              </>
+            )}
+          </div>
+          {!editingName && (
+            <button onClick={()=>{ setNameInput(profileName); setEditingName(true); }} style={{ width:34,height:34,borderRadius:10,background:'var(--bg4)',border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16 }}>
+              ✏️
+            </button>
+          )}
+        </div>
+
+        {/* ── APPEARANCE ───────────────────────────────────────────── */}
+        <SectionLabel label="Appearance"/>
+        <div style={{ background:'var(--bg2)', borderRadius:20, margin:'0 14px', border:`1px solid var(--border)`, overflow:'hidden' }}>
+          {/* dark/light toggle */}
+          <div style={{ display:'flex',alignItems:'center',gap:14,padding:'15px 18px' }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>{lightMode?'☀️':'🌙'}</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1 }}>Dark Mode</span>
+            <Toggle on={!lightMode} onToggle={onToggleTheme}/>
+          </div>
+          {/* accent color */}
+          <div style={{ display:'flex',alignItems:'center',gap:14,padding:'14px 18px',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>🎨</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1 }}>Accent Color</span>
+            <div style={{ display:'flex',gap:6 }}>
+              {ACCENT_COLORS.map(c=>(
+                <div key={c} onClick={()=>saveAccent(c)} style={{ width:24,height:24,borderRadius:'50%',background:c,cursor:'pointer',border:accentColor===c?'2px solid white':'2px solid transparent',transition:'border 150ms',flexShrink:0 }}/>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── GENERAL ──────────────────────────────────────────────── */}
+        <SectionLabel label="General"/>
+        <div style={{ background:'var(--bg2)', borderRadius:20, margin:'0 14px', border:`1px solid var(--border)`, overflow:'hidden' }}>
+          <button onClick={()=>setShowCurSheet(true)} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit' }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>💱</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>Default Currency</span>
+            <span style={{ fontSize:13,color:'#5B4DD3',fontWeight:700,marginRight:6 }}>{defCurrency}</span>
+            <IChevR s={15} c={T3}/>
+          </button>
+        </div>
+
+        {/* ── MANAGE ───────────────────────────────────────────────── */}
+        <SectionLabel label="Manage"/>
+        <div style={{ background:'var(--bg2)', borderRadius:20, margin:'0 14px', border:`1px solid var(--border)`, overflow:'hidden' }}>
+          <button onClick={()=>onScreenChange('accounts')} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit' }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>🏦</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>Accounts</span>
+            <IChevR s={15} c={T3}/>
+          </button>
+          <button onClick={openCatMgr} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>🗂️</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>Categories</span>
+            <IChevR s={15} c={T3}/>
+          </button>
+          <button onClick={()=>onScreenChange('budget')} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>📊</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>Budgets</span>
+            <IChevR s={15} c={T3}/>
+          </button>
+        </div>
+
+        {/* ── DATA ─────────────────────────────────────────────────── */}
+        <SectionLabel label="Data"/>
+        <div style={{ background:'var(--bg2)', borderRadius:20, margin:'0 14px', border:`1px solid var(--border)`, overflow:'hidden' }}>
+          <button onClick={exportCSV} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit' }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>📤</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1,textAlign:'left' }}>Export to CSV</span>
+            <IChevR s={15} c={T3}/>
+          </button>
+          <button onClick={()=>setShowClearConfirm(true)} style={{ width:'100%',display:'flex',alignItems:'center',gap:14,padding:'15px 18px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>🗑️</span>
+            <span style={{ fontSize:15,fontWeight:600,color:'#E74C3C',flex:1,textAlign:'left' }}>Clear All Data</span>
+            <IChevR s={15} c='#E74C3C'/>
+          </button>
+        </div>
+
+        {/* ── ABOUT ────────────────────────────────────────────────── */}
+        <SectionLabel label="About"/>
+        <div style={{ background:'var(--bg2)', borderRadius:20, margin:'0 14px 20px', border:`1px solid var(--border)`, overflow:'hidden' }}>
+          <div style={{ display:'flex',alignItems:'center',gap:14,padding:'15px 18px' }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>💳</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1 }}>StoreCredit</span>
+            <span style={{ fontSize:13,color:T3,fontWeight:600 }}>v1.0.0</span>
+          </div>
+          <div style={{ display:'flex',alignItems:'center',gap:14,padding:'15px 18px',borderTop:`1px solid var(--border)` }}>
+            <span style={{ fontSize:20,width:26,textAlign:'center' }}>📝</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T1,flex:1 }}>Personal finance tracker</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── CLEAR CONFIRM DIALOG ──────────────────────────────────── */}
+      {showClearConfirm && (
+        <div style={{ position:'absolute',inset:0,zIndex:700,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:24 }}>
+          <div style={{ background:'var(--bg2)',borderRadius:24,padding:'28px 24px',width:'100%',maxWidth:320,animation:'dropIn 200ms ease' }}>
+            <div style={{ fontSize:40,textAlign:'center',marginBottom:12 }}>⚠️</div>
+            <div style={{ fontSize:17,fontWeight:800,color:T1,textAlign:'center',marginBottom:8 }}>Clear All Data?</div>
+            <div style={{ fontSize:13,color:T3,textAlign:'center',marginBottom:24,lineHeight:1.5 }}>
+              This will permanently delete all transactions and reset all account balances to zero. This cannot be undone.
+            </div>
+            <div style={{ display:'flex',gap:10 }}>
+              <button onClick={()=>setShowClearConfirm(false)} style={{ flex:1,padding:'13px',borderRadius:14,border:`1px solid var(--border)`,background:'none',color:T2,fontFamily:'inherit',fontSize:14,fontWeight:600,cursor:'pointer' }}>Cancel</button>
+              <button onClick={clearAllData} disabled={clearing} style={{ flex:1,padding:'13px',borderRadius:14,border:'none',background:'#E74C3C',color:'#fff',fontFamily:'inherit',fontSize:14,fontWeight:700,cursor:'pointer',opacity:clearing?0.6:1 }}>
+                {clearing ? 'Clearing…' : 'Clear All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CURRENCY SHEET ────────────────────────────────────────── */}
+      {showCurSheet && <CurrencySheet current={defCurrency} onPick={pickCurrency} onClose={()=>setShowCurSheet(false)} visible={showCurSheet}/>}
+
+      {/* ── CATEGORY MANAGER ─────────────────────────────────────── */}
+      {showCatMgr && <CategoryManagerSheet onClose={closeCatMgr} visible={catMgrVis}/>}
     </div>
   );
 }
@@ -2073,7 +2437,7 @@ function App() {
         {screen === 'accounts' && <AccountScreen accounts={accounts} onRefresh={() => setTick(t=>t+1)}/>}
         {screen === 'txns'     && <TxnsScreen accounts={accounts}/>}
         {screen === 'budget'   && <BudgetScreen accounts={accounts}/>}
-        {screen === 'settings' && <SettingScreen/>}
+        {screen === 'settings' && <SettingScreen lightMode={lightMode} onToggleTheme={toggleTheme} onScreenChange={s=>{setScreen(s);}} onRefresh={()=>setTick(t=>t+1)}/>}
 
         <BottomNav active={screen} setActive={setScreen}/>
       </div>
