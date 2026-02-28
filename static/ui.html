@@ -832,17 +832,17 @@ function TxnsScreen({ accounts }) {
   const selAcc = accounts.find(a => a.id === selAccId);
   const cur    = selAcc?.currency || accounts[0]?.currency || 'USD';
 
-  /* ── fetch ── */
+  /* ── fetch ── always load the full year; month filtering is client-side */
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    params.set('p', selMonth ? `${selYear}-${String(selMonth).padStart(2,'0')}` : String(selYear));
+    params.set('p', String(selYear));
     if (selAccId) params.set('account_id', selAccId);
     fetch('/api/transactions?' + params)
       .then(r => r.json())
       .then(d => { setTxns(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [selYear, selMonth, selAccId]);
+  }, [selYear, selAccId]);
   useEffect(() => { load(); }, [load]);
 
   /* ── month grid data ── */
