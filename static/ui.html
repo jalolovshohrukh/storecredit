@@ -1703,7 +1703,8 @@ function AccountDetailScreen({ accountId, accounts, allAccounts, onClose, onRefr
   const load = useCallback(() => {
     if (!accountId) return;
     setLoading(true);
-    fetch(`/api/transactions?p=${period}&account_id=${accountId}`)
+    const pParam = period === 'day' ? 'today' : 'month';
+    fetch(`/api/transactions?p=${pParam}&account_id=${accountId}`)
       .then(r => r.json())
       .then(d => { setTxns(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));
