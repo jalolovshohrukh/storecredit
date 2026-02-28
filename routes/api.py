@@ -49,9 +49,56 @@ def update_account(aid):
     return jsonify({'ok': True})
 
 
+@api_bp.route('/ledgers')
+def get_ledgers():
+    return jsonify(fetch_all("SELECT * FROM ledgers ORDER BY created_at"))
+
+
+@api_bp.route('/ledgers', methods=['POST'])
+def create_ledger():
+    d    = request.get_json(force=True)
+    name = (d.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'name required'}), 400
+    lid = gen_id()
+    execute(
+        "INSERT INTO ledgers(id,name,icon,color,currency) VALUES(%s,%s,%s,%s,%s)",
+        (lid, name, d.get('icon', '📒'), d.get('color', '#5B4DD3'), d.get('currency', 'USD')),
+    )
+    # Seed starter categories for this ledger
+    for cat in d.get('categories', []):
+        execute(
+            "INSERT INTO categories(id,name,type,icon,color,ledger_id) VALUES(%s,%s,%s,%s,%s,%s)",
+            (gen_id(), cat['name'], cat.get('type','expense'), cat.get('icon','💰'), cat.get('color','#888'), lid),
+        )
+    return jsonify({'ok': True, 'id': lid})
+
+
+@api_bp.route('/ledgers/<lid>', methods=['PUT'])
+def update_ledger(lid):
+    d = request.get_json(force=True)
+    execute(
+        "UPDATE ledgers SET name=%s, icon=%s, color=%s, currency=%s WHERE id=%s",
+        (d.get('name',''), d.get('icon','📒'), d.get('color','#5B4DD3'), d.get('currency','USD'), lid),
+    )
+    return jsonify({'ok': True})
+
+
+@api_bp.route('/ledgers/<lid>', methods=['DELETE'])
+def delete_ledger(lid):
+    execute("DELETE FROM categories WHERE ledger_id=%s", (lid,))
+    execute("DELETE FROM ledgers WHERE id=%s", (lid,))
+    return jsonify({'ok': True})
+
+
 @api_bp.route('/categories')
 def get_categories():
-    return jsonify(fetch_all("SELECT * FROM categories ORDER BY type, name"))
+    ledger_id = request.args.get('ledger_id')
+    if ledger_id:
+        rows = fetch_all("SELECT * FROM categories WHERE ledger_id=%s ORDER BY type, name", (ledger_id,))
+    else:
+        rows = fetch_all("SELECT * FROM categories ORDER BY type, name")
+    return jsonify(rows)
 
 
 @api_bp.route('/transactions', methods=['GET'])
@@ -159,6 +206,7 @@ def get_budgets():
 def get_home():
     """Returns category cards (with totals) for the home screen grid."""
     account_id = request.args.get('account_id')
+    ledger_id  = request.args.get('ledger_id')
     period     = request.args.get('p', 'all')
     now        = datetime.now()
 
@@ -176,19 +224,27 @@ def get_home():
 
     t_where = ('AND ' + ' AND '.join(t_filters)) if t_filters else ''
 
+    # Category filter: ledger-specific or global (ledger_id IS NULL)
+    if ledger_id:
+        c_where = "AND c.ledger_id = %s"
+        c_extra = (ledger_id,)
+    else:
+        c_where = ""
+        c_extra = ()
+
     def cat_rows(typ):
         return fetch_all(f"""
-            SELECT c.id, c.name, c.icon, c.color, c.type,
+            SELECT c.id, c.name, c.icon, c.color, c.type, c.ledger_id,
                    COALESCE(SUM(t.amount), 0) AS total,
                    b.amount AS budget_amount
             FROM categories c
             LEFT JOIN transactions t
               ON t.category_id = c.id AND t.type = %s {t_where}
             LEFT JOIN budgets b ON b.category_id = c.id
-            WHERE c.type = %s
-            GROUP BY c.id, c.name, c.icon, c.color, c.type, b.amount
+            WHERE c.type = %s {c_where}
+            GROUP BY c.id, c.name, c.icon, c.color, c.type, c.ledger_id, b.amount
             ORDER BY total DESC, c.name
-        """, (typ, *t_params, typ))
+        """, (typ, *t_params, typ, *c_extra))
 
     exp_cats = cat_rows('expense')
     inc_cats = cat_rows('income')
@@ -208,8 +264,8 @@ def create_category():
         return jsonify({'ok': False, 'error': 'name required'}), 400
     cid = gen_id()
     execute(
-        "INSERT INTO categories(id,name,type,icon,color) VALUES(%s,%s,%s,%s,%s)",
-        (cid, name, d.get('type','expense'), d.get('icon','💰'), d.get('color','#2A3A1A')),
+        "INSERT INTO categories(id,name,type,icon,color,ledger_id) VALUES(%s,%s,%s,%s,%s,%s)",
+        (cid, name, d.get('type','expense'), d.get('icon','💰'), d.get('color','#2A3A1A'), d.get('ledger_id') or None),
     )
     return jsonify({'ok': True, 'id': cid})
 

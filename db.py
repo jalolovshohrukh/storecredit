@@ -133,6 +133,17 @@ def ensure_tables():
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS to_account_id VARCHAR(8)")
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note TEXT")
         c.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_id VARCHAR(8)")
+        # Ledgers
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS ledgers (
+                id VARCHAR(8) PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                icon VARCHAR(10) DEFAULT '📒',
+                color VARCHAR(7) DEFAULT '#5B4DD3',
+                currency VARCHAR(3) DEFAULT 'USD',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""")
+        c.execute("ALTER TABLE categories ADD COLUMN IF NOT EXISTS ledger_id VARCHAR(8) REFERENCES ledgers(id) ON DELETE CASCADE")
 
         c.execute("SELECT COUNT(*) FROM categories")
         if c.fetchone()[0] == 0:
