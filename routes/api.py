@@ -69,6 +69,10 @@ def get_transactions():
         filters.append("t.date::text LIKE %s"); params.append(str(now.year) + '%')
     if typ != 'all':
         filters.append("t.type=%s");            params.append(typ)
+    account_id = request.args.get('account_id')
+    if account_id:
+        filters.append("(t.account_id=%s OR t.to_account_id=%s)")
+        params.extend([account_id, account_id])
 
     where = ('WHERE ' + ' AND '.join(filters)) if filters else ''
     rows = fetch_all(f"""

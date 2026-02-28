@@ -604,10 +604,10 @@ function AddCategoryModal({ type, onClose, onSuccess }) {
 /* ════════════════════════════════════════════════════════════════════════
    ADD TRANSACTION MODAL (opened by tapping a category card)
    ════════════════════════════════════════════════════════════════════════ */
-function AddTxnModal({ accounts, preCategory, onClose, onSuccess }) {
+function AddTxnModal({ accounts, preCategory, preAccountId, onClose, onSuccess }) {
   const [on,     setOn]    = useState(false);
   const [amt,    setAmt]   = useState('0');
-  const [accId,  setAccId] = useState(accounts[0]?.id || '');
+  const [accId,  setAccId] = useState(preAccountId || accounts[0]?.id || '');
   const [date,   setDate]  = useState(new Date().toISOString().slice(0,10));
   const [note,   setNote]  = useState('');
   const [busy,   setBusy]  = useState(false);
@@ -897,10 +897,11 @@ const GROUP_CFG = {
 
 function AccountScreen({ accounts, onRefresh }) {
   const lm = useContext(ThemeCtx);
-  const [collapsed, setCollapsed] = useState({});
-  const [hidden,    setHidden]    = useState(false);
-  const [addOpen,   setAddOpen]   = useState(false);
-  const [addOn,     setAddOn]     = useState(false);
+  const [collapsed,   setCollapsed]   = useState({});
+  const [hidden,      setHidden]      = useState(false);
+  const [addOpen,     setAddOpen]     = useState(false);
+  const [addOn,       setAddOn]       = useState(false);
+  const [detailAccId, setDetailAccId] = useState(null);
 
   /* group accounts by type */
   const grouped = { debit:[], lent:[], borrowed:[], invest:[] };
@@ -1027,9 +1028,10 @@ function AccountScreen({ accounts, onRefresh }) {
                 const pal = palette(a.id || a.name, lm);
                 const neg = (a.balance || 0) < 0;
                 return (
-                  <div key={a.id} style={{
+                  <div key={a.id} onClick={() => setDetailAccId(a.id)} style={{
                     display:'flex', alignItems:'center', gap:13, padding:'11px 18px',
                     borderTop:`1px solid var(--border)`,
+                    cursor:'pointer',
                   }}>
                     <div style={{
                       width:40, height:40, borderRadius:12,
@@ -1068,6 +1070,17 @@ function AccountScreen({ accounts, onRefresh }) {
       {/* ── ADD ACCOUNT MODAL ────────────────────────────────────────── */}
       {addOpen && (
         <AddAccountModal on={addOn} onClose={closeAdd} onSuccess={() => { closeAdd(); onRefresh?.(); }}/>
+      )}
+
+      {/* ── ACCOUNT DETAIL OVERLAY ───────────────────────────────────── */}
+      {detailAccId && (
+        <AccountDetailScreen
+          accountId={detailAccId}
+          accounts={accounts}
+          allAccounts={accounts}
+          onClose={() => setDetailAccId(null)}
+          onRefresh={onRefresh}
+        />
       )}
     </div>
   );
@@ -1161,6 +1174,274 @@ function AddAccountModal({ on, onClose, onSuccess }) {
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PICK CATEGORY SHEET  (step 1 of add-txn flow from account detail)
+   ════════════════════════════════════════════════════════════════════════ */
+function PickCategorySheet({ on, onClose, onPick }) {
+  const [txType, setTxType] = useState('expense');
+  const [cats,   setCats]   = useState([]);
+  const lm = useContext(ThemeCtx);
+
+  useEffect(() => {
+    fetch('/api/categories').then(r => r.json()).then(d => setCats(Array.isArray(d) ? d : []));
+  }, []);
+
+  const filtered = cats.filter(c => c.type === txType);
+  const accentC  = txType === 'expense' ? '#E74C3C' : '#2ECC71';
+
+  return (
+    <ModalShell on={on} onClose={onClose} title="Add Transaction">
+      <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+        {/* type toggle */}
+        <div style={{ display:'flex', gap:8, padding:'0 20px 14px' }}>
+          {[['expense','Expense','#E74C3C'],['income','Income','#2ECC71']].map(([v,l,c]) => (
+            <button key={v} onClick={() => setTxType(v)} style={{
+              flex:1, padding:'10px', borderRadius:12, cursor:'pointer',
+              fontFamily:'inherit', fontSize:14, fontWeight:700,
+              background: txType === v ? c + '22' : 'var(--bg4)',
+              color: txType === v ? c : T2,
+              border: `2px solid ${txType === v ? c : 'transparent'}`,
+              transition:'all 150ms',
+            }}>{l}</button>
+          ))}
+        </div>
+        {/* category list */}
+        <div style={{ overflowY:'auto', flex:1, padding:'0 20px 20px' }}>
+          {filtered.map((c, i) => {
+            const pal = palette(c.id || c.name, lm);
+            return (
+              <div key={c.id} onClick={() => onPick(c, txType)} style={{
+                display:'flex', alignItems:'center', gap:14, padding:'12px 0',
+                borderBottom: i < filtered.length-1 ? `1px solid var(--border)` : 'none',
+                cursor:'pointer',
+              }}>
+                <div style={{
+                  width:42, height:42, borderRadius:12, background:pal.bg,
+                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0,
+                }}>
+                  {c.icon || '💰'}
+                </div>
+                <span style={{ fontSize:15, fontWeight:600, color:T1, flex:1 }}>{c.name}</span>
+                <IChevR s={14} c={T3}/>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div style={{ textAlign:'center', color:T3, padding:'30px 0', fontSize:14 }}>
+              No {txType} categories yet
+            </div>
+          )}
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ACCOUNT DETAIL SCREEN
+   ════════════════════════════════════════════════════════════════════════ */
+function AccountDetailScreen({ accountId, accounts, allAccounts, onClose, onRefresh }) {
+  const lm      = useContext(ThemeCtx);
+  const account = accounts.find(a => a.id === accountId) || {};
+  const pal     = palette(account.id || account.name || '', lm);
+
+  const [period,   setPeriod]   = useState('month');
+  const [txns,     setTxns]     = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickOn,   setPickOn]   = useState(false);
+  const [addCat,   setAddCat]   = useState(null);  // { cat, txType } → open AddTxnModal
+
+  const load = useCallback(() => {
+    if (!accountId) return;
+    setLoading(true);
+    fetch(`/api/transactions?p=${period}&account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => { setTxns(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [accountId, period]);
+
+  useEffect(() => { load(); }, [load]);
+
+  /* group by date */
+  const dateMap = {};
+  txns.forEach(t => {
+    const d = t.date ? String(t.date).slice(0, 10) : 'Unknown';
+    if (!dateMap[d]) dateMap[d] = [];
+    dateMap[d].push(t);
+  });
+  const dates = Object.keys(dateMap).sort((a, b) => b.localeCompare(a));
+
+  const fmtDateHdr = d => {
+    try { return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday:'short', day:'numeric', month:'short' }); }
+    catch { return d; }
+  };
+
+  const openPick  = () => { setPickOpen(true);  setTimeout(() => setPickOn(true),  10); };
+  const closePick = () => { setPickOn(false);   setTimeout(() => setPickOpen(false), 310); };
+
+  const handlePickedCat = (cat, txType) => {
+    closePick();
+    setTimeout(() => setAddCat({ cat: { ...cat, type: txType }, txType }), 320);
+  };
+
+  return (
+    <div style={{
+      position:'absolute', inset:0, zIndex:500, background:APP_BG,
+      display:'flex', flexDirection:'column',
+      animation:'fadeUp 220ms ease both',
+    }}>
+      {/* ── HEADER ──────────────────────────────────────────────────── */}
+      <div style={{ padding:'48px 18px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+        <button onClick={onClose} style={{
+          width:34, height:34, borderRadius:'50%', background:'var(--bg3)',
+          border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+        }}>
+          <IChevL s={18} c={T2} w={2.5}/>
+        </button>
+        <span style={{ fontSize:17, fontWeight:700, color:T1 }}>{account.name}</span>
+        <div style={{ width:34 }}/>
+      </div>
+
+      {/* ── ACCOUNT CARD ─────────────────────────────────────────────── */}
+      <div style={{
+        margin:'0 14px 16px', background:'var(--bg2)',
+        borderRadius:20, padding:'18px 20px', border:`1px solid var(--border)`,
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+          <div style={{
+            width:46, height:46, borderRadius:13, background:pal.bg,
+            border:`1px solid ${CARD_BORDER}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+          }}>
+            <span style={{ color:pal.cc, fontSize:20, fontWeight:800 }}>
+              {(account.name||'?')[0].toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:T1 }}>{account.name}</div>
+            <div style={{ fontSize:12, color:T3 }}>{account.currency}</div>
+          </div>
+        </div>
+        <div style={{ fontSize:30, fontWeight:800, color:T1, letterSpacing:'-1px', marginBottom:16 }}>
+          {fmtAmt(account.balance || 0, account.currency)}
+        </div>
+        {/* action buttons */}
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={openPick} style={{
+            width:44, height:44, borderRadius:13, background:'#5B4DD3',
+            border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+          }}>
+            <IPlus s={20} c="white" w={2.5}/>
+          </button>
+          <button style={{
+            width:44, height:44, borderRadius:13, background:'var(--bg5)',
+            border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T2} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+              <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* ── TRANSACTIONS HEADER ──────────────────────────────────────── */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 18px 10px', flexShrink:0 }}>
+        <span style={{ fontSize:15, fontWeight:700, color:T1 }}>Transactions</span>
+        <div style={{ display:'flex', background:'var(--bg3)', borderRadius:20, padding:3 }}>
+          {[['day','Day'],['month','Month']].map(([v,l]) => (
+            <button key={v} onClick={() => setPeriod(v)} style={{
+              padding:'5px 16px', borderRadius:18, border:'none', cursor:'pointer',
+              background: period === v ? '#5B4DD3' : 'transparent',
+              color: period === v ? 'white' : T3,
+              fontSize:12, fontWeight:600, fontFamily:'inherit', transition:'all 150ms',
+            }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── TRANSACTION LIST ─────────────────────────────────────────── */}
+      <div style={{ flex:1, overflowY:'auto', padding:'0 14px 90px' }}>
+        {loading
+          ? <div style={{ textAlign:'center', color:T3, padding:'40px 0' }}>Loading…</div>
+          : dates.length === 0
+            ? <div style={{ textAlign:'center', padding:'50px 0' }}>
+                <div style={{ fontSize:38, marginBottom:8 }}>📭</div>
+                <div style={{ fontWeight:700, color:T2 }}>No transactions yet</div>
+              </div>
+            : dates.map(date => {
+                const rows     = dateMap[date];
+                const inTotal  = rows.filter(t => t.type==='income').reduce((s,t) => s+parseFloat(t.amount||0), 0);
+                const outTotal = rows.filter(t => t.type==='expense').reduce((s,t) => s+parseFloat(t.amount||0), 0);
+                return (
+                  <div key={date} style={{ marginBottom:10 }}>
+                    {/* date header */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 4px 6px' }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:T2 }}>{fmtDateHdr(date)}</span>
+                      <div style={{ display:'flex', gap:10, fontSize:11, fontWeight:700 }}>
+                        {inTotal  > 0 && <span style={{ color:'#2ECC71' }}>IN {fmtAmt(inTotal, account.currency)}</span>}
+                        {outTotal > 0 && <span style={{ color:'#E74C3C' }}>OUT {fmtAmt(outTotal, account.currency)}</span>}
+                      </div>
+                    </div>
+                    {/* rows card */}
+                    <div style={{ background:'var(--bg2)', borderRadius:16, overflow:'hidden', border:`1px solid var(--border)` }}>
+                      {rows.map((t, i) => {
+                        const isExp = t.type==='expense', isInc = t.type==='income';
+                        const tPal  = palette(t.category_id || t.cat_name || t.type, lm);
+                        return (
+                          <div key={t.id} style={{
+                            display:'flex', alignItems:'center', gap:12, padding:'12px 14px',
+                            borderTop: i > 0 ? `1px solid var(--border)` : 'none',
+                          }}>
+                            <div style={{
+                              width:40, height:40, borderRadius:11, background:tPal.bg, flexShrink:0,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              fontSize:18, border:`1px solid ${CARD_BORDER}`,
+                            }}>
+                              {t.cat_icon || '💸'}
+                            </div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:14, fontWeight:600, color:T1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                {t.cat_name || t.note || t.type}
+                              </div>
+                              {t.note && <div style={{ fontSize:11, color:T3, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.note}</div>}
+                            </div>
+                            <div style={{ fontSize:14, fontWeight:700, color: isExp?'#E74C3C':isInc?'#2ECC71':'#9B59B6', whiteSpace:'nowrap' }}>
+                              {isExp?'−':isInc?'+':''}{fmtAmt(t.amount||0, account.currency)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+        }
+      </div>
+
+      {/* ── PICK CATEGORY SHEET ──────────────────────────────────────── */}
+      {pickOpen && (
+        <PickCategorySheet
+          on={pickOn}
+          onClose={closePick}
+          onPick={handlePickedCat}
+        />
+      )}
+
+      {/* ── ADD TXN MODAL (after category picked) ────────────────────── */}
+      {addCat && (
+        <AddTxnModal
+          accounts={allAccounts}
+          preCategory={addCat.cat}
+          preAccountId={accountId}
+          onClose={() => setAddCat(null)}
+          onSuccess={() => { setAddCat(null); load(); onRefresh?.(); }}
+        />
+      )}
+    </div>
   );
 }
 
