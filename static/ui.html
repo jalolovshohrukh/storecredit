@@ -725,12 +725,28 @@ function AddTxnModal({ accounts, preCategory, preAccountId, onClose, onSuccess }
 
       {/* numpad */}
       <div style={{ display:'flex', gap:8, flex:1, padding:'10px 16px 20px', minHeight:0 }}>
-        <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gridTemplateRows:'repeat(4,1fr)', gap:7 }}>
-          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-            <NK key={k} accent={accentC} onP={() => key(k)}>
-              {k === '⌫' ? <IDel s={16} c={T1}/> : k}
-            </NK>
-          ))}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:7 }}>
+          {/* digits 1–9 (3×3 grid) */}
+          <div style={{ flex:3, display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:7 }}>
+            {['1','2','3','4','5','6','7','8','9'].map(k => (
+              <NK key={k} accent={accentC} onP={() => key(k)}>{k}</NK>
+            ))}
+          </div>
+          {/* bottom row: C  .  0  ⌫ */}
+          <div style={{ flex:1, display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:7 }}>
+            {[
+              ['C',  () => setAmt('0')],
+              ['.',  () => key('.')],
+              ['0',  () => key('0')],
+              ['⌫',  () => key('⌫')],
+            ].map(([k, fn]) => (
+              <NK key={k} accent={accentC} onP={fn}>
+                {k === '⌫' ? <IDel s={16} c={T1}/> :
+                 k === 'C'  ? <span style={{ fontSize:16, fontWeight:800, color:'#E74C3C' }}>C</span> :
+                 k}
+              </NK>
+            ))}
+          </div>
         </div>
         <CK accent={accentC} onP={submit} busy={busy}/>
       </div>
